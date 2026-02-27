@@ -38,7 +38,9 @@ app.whenReady().then(() => {
       const code = loadSkillCode(skillName);
       if (code && code.startService) {
         const deps = { getAgentConfig: (aid) => getAgent(aid), agentLoop };
-        code.startService(id, skillData.config, deps);
+        code.startService(id, skillData.config, deps).catch((err) => {
+          console.log(`Auto-start ${skillName} failed for agent ${id}: ${err.message}`);
+        });
       }
     }
   }

@@ -143,7 +143,7 @@ function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle("skill:service-toggle", (event, agentId, skillName) => {
+  ipcMain.handle("skill:service-toggle", async (event, agentId, skillName) => {
     const { getSkillManifest } = require("./skill-registry");
     const manifest = getSkillManifest(skillName);
     if (!manifest || manifest.type !== "service") {
@@ -168,8 +168,8 @@ function registerIpcHandlers() {
       agentLoop,
     };
 
-    const ok = code.startService(agentId, skillConfig, deps);
-    return { running: ok, error: ok ? null : "启动失败，请检查配置" };
+    const ok = await code.startService(agentId, skillConfig, deps);
+    return { running: ok, error: ok ? null : "启动失败，请检查 token 是否有效" };
   });
 
   // --- UI state persistence ---

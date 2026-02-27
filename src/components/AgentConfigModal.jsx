@@ -31,6 +31,8 @@ export default function AgentConfigModal({ agentId, onClose }) {
   const [skillConfigs, setSkillConfigs] = useState({});
   const [downloadUrl, setDownloadUrl] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [installedFilter, setInstalledFilter] = useState("");
+  const [availableFilter, setAvailableFilter] = useState("");
 
   // Load available skills
   useEffect(() => {
@@ -162,6 +164,18 @@ export default function AgentConfigModal({ agentId, onClose }) {
   const installedSkillNames = Object.keys(agentSkills).filter((n) => agentSkills[n]?.installed);
   const uninstalledSkills = availableSkills.filter((s) => !installedSkillNames.includes(s.name));
 
+  const instLower = installedFilter.toLowerCase();
+  const filteredInstalled = installedSkillNames.filter((n) => {
+    if (!instLower) return true;
+    const manifest = availableSkills.find((s) => s.name === n);
+    return n.toLowerCase().includes(instLower) || (manifest?.displayName || "").toLowerCase().includes(instLower);
+  });
+  const availLower = availableFilter.toLowerCase();
+  const filteredUninstalled = uninstalledSkills.filter((s) => {
+    if (!availLower) return true;
+    return s.name.toLowerCase().includes(availLower) || s.displayName.toLowerCase().includes(availLower);
+  });
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content modal-wide" onClick={(e) => e.stopPropagation()}>
@@ -210,64 +224,85 @@ export default function AgentConfigModal({ agentId, onClose }) {
 
           {/* Installed Skills */}
           <div className="skills-section">
-            <h4 className="skills-title">Installed Skills</h4>
-            {installedSkillNames.length === 0 && <p className="skills-empty">No skills installed</p>}
-            {installedSkillNames.map((skillName) => {
-              const manifest = availableSkills.find((s) => s.name === skillName);
-              const isExpanded = expandedSkill === skillName;
-              const configSchema = manifest?.configSchema || {};
-              const hasConfig = Object.keys(configSchema).length > 0;
+            <div className="skills-section-header">
+              <h4 className="skills-title">Installed Skills ({filteredInstalled.length})</h4>
+              <input
+                type="text"
+                value={installedFilter}
+                onChange={(e) => setInstalledFilter(e.target.value)}
+                placeholder="Filter..."
+                className="form-input skill-filter-inline"
+              />
+            </div>
+            <div className="skills-scroll">
+              {filteredInstalled.length === 0 && <p className="skills-empty">{installedFilter ? "No match" : "No skills installed"}</p>}
+              {filteredInstalled.map((skillName) => {
+                const manifest = availableSkills.find((s) => s.name === skillName);
+                const isExpanded = expandedSkill === skillName;
+                const configSchema = manifest?.configSchema || {};
+                const hasConfig = Object.keys(configSchema).length > 0;
 
-              return (
-                <div key={skillName} className="skill-card installed">
-                  <div className="skill-card-header" onClick={() => setExpandedSkill(isExpanded ? null : skillName)}>
-                    <div className="skill-card-info">
-                      <span className="skill-name">{manifest?.displayName || skillName}</span>
-                      <span className="skill-type">{manifest?.type || "unknown"}</span>
+                return (
+                  <div key={skillName} className="skill-card installed">
+                    <div className="skill-card-header" onClick={() => setExpandedSkill(isExpanded ? null : skillName)}>
+                      <div className="skill-card-info">
+                        <span className="skill-name">{manifest?.displayName || skillName}</span>
+                        <span className="skill-type">{manifest?.type || "unknown"}</span>
+                      </div>
+                      <div className="skill-card-actions">
+                        {hasConfig && <span className="skill-expand">{isExpanded ? "\u25B2" : "\u25BC"}</span>}
+                        <button className="btn-small btn-danger" onClick={(e) => { e.stopPropagation(); handleUninstallSkill(skillName); }}>
+                          Uninstall
+                        </button>
+                      </div>
                     </div>
-                    <div className="skill-card-actions">
-                      {hasConfig && <span className="skill-expand">{isExpanded ? "\u25B2" : "\u25BC"}</span>}
-                      <button className="btn-small btn-danger" onClick={(e) => { e.stopPropagation(); handleUninstallSkill(skillName); }}>
-                        Uninstall
-                      </button>
-                    </div>
+                    {manifest && <p className="skill-description">{manifest.description}</p>}
+                    {isExpanded && hasConfig && (
+                      <div className="skill-config">
+                        {Object.entries(configSchema).map(([key, schema]) => (
+                          <label key={key} className="form-label">
+                            {schema.label || key}
+                            {schema.type === "boolean" ? (
+                              <input
+                                type="checkbox"
+                                checked={skillConfigs[skillName]?.[key] || false}
+                                onChange={(e) => handleSkillConfigChange(skillName, key, e.target.checked)}
+                                style={{ marginLeft: 8 }}
+                              />
+                            ) : (
+                              <input
+                                type={schema.type === "password" ? "password" : "text"}
+                                value={skillConfigs[skillName]?.[key] ?? schema.default ?? ""}
+                                onChange={(e) => handleSkillConfigChange(skillName, key, schema.type === "number" ? Number(e.target.value) : e.target.value)}
+                                placeholder={String(schema.default || "")}
+                                className="form-input"
+                              />
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {manifest && <p className="skill-description">{manifest.description}</p>}
-                  {isExpanded && hasConfig && (
-                    <div className="skill-config">
-                      {Object.entries(configSchema).map(([key, schema]) => (
-                        <label key={key} className="form-label">
-                          {schema.label || key}
-                          {schema.type === "boolean" ? (
-                            <input
-                              type="checkbox"
-                              checked={skillConfigs[skillName]?.[key] || false}
-                              onChange={(e) => handleSkillConfigChange(skillName, key, e.target.checked)}
-                              style={{ marginLeft: 8 }}
-                            />
-                          ) : (
-                            <input
-                              type={schema.type === "password" ? "password" : "text"}
-                              value={skillConfigs[skillName]?.[key] ?? schema.default ?? ""}
-                              onChange={(e) => handleSkillConfigChange(skillName, key, schema.type === "number" ? Number(e.target.value) : e.target.value)}
-                              placeholder={String(schema.default || "")}
-                              className="form-input"
-                            />
-                          )}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
           {/* Available Skills */}
-          {uninstalledSkills.length > 0 && (
-            <div className="skills-section">
-              <h4 className="skills-title">Available Skills</h4>
-              {uninstalledSkills.map((skill) => (
+          <div className="skills-section">
+            <div className="skills-section-header">
+              <h4 className="skills-title">Available Skills ({filteredUninstalled.length})</h4>
+              <input
+                type="text"
+                value={availableFilter}
+                onChange={(e) => setAvailableFilter(e.target.value)}
+                placeholder="Filter..."
+                className="form-input skill-filter-inline"
+              />
+            </div>
+            <div className="skills-scroll">
+              {filteredUninstalled.length === 0 && <p className="skills-empty">{availableFilter ? "No match" : "All skills installed"}</p>}
+              {filteredUninstalled.map((skill) => (
                 <div key={skill.name} className="skill-card available">
                   <div className="skill-card-header">
                     <div className="skill-card-info">
@@ -282,7 +317,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
                 </div>
               ))}
             </div>
-          )}
+          </div>
 
           {/* Download from URL */}
           <div className="skills-section">

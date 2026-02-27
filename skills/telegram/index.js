@@ -29,7 +29,7 @@ async function sendTelegramLong(bot, chatId, text) {
  * @param {object} config - { token, autoStart }
  * @param {object} deps - { getAgentConfig, agentLoop }
  */
-function startService(agentId, config, deps) {
+async function startService(agentId, config, deps) {
   const token = config.token || "";
   if (!token || token === "YOUR_BOT_TOKEN_HERE") {
     console.log(`Telegram bot for agent ${agentId}: missing or placeholder token.`);
@@ -42,6 +42,11 @@ function startService(agentId, config, deps) {
   }
 
   try {
+    // Validate token before starting polling
+    const testBot = new TelegramBot(token);
+    const me = await testBot.getMe();
+    console.log(`Telegram token valid for agent ${agentId}: @${me.username}`);
+
     const bot = new TelegramBot(token, { polling: true });
     const sessions = new Map();
     bots.set(agentId, { bot, sessions });
@@ -107,7 +112,15 @@ function startService(agentId, config, deps) {
     });
 
     bot.on("polling_error", (err) => {
-      console.log(`Telegram polling error (agent ${agentId}): ${err.message}`);
+      const msg = err.message || "";
+      console.log(`Telegram polling error (agent ${agentId}): ${msg}`);
+
+      // Fatal errors — stop polling to avoid infinite retry spam
+      if (msg.includes("404") || msg.includes("401") || msg.includes("403")) {
+        console.log(`Telegram bot for agent ${agentId}: fatal error (invalid/revoked token), stopping.`);
+        bot.stopPolling();
+        bots.delete(agentId);
+      }
     });
 
     return true;

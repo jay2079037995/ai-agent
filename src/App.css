@@ -782,6 +782,51 @@ body {
   margin-top: 4px;
 }
 
+.skills-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.skills-section-header .skills-title {
+  margin-bottom: 0;
+}
+
+.skill-filter-inline {
+  width: 140px;
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+}
+
+/* === Skills Scrollable List === */
+
+.skills-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--bg-page);
+}
+
+.skills-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.skills-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.skills-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+  border-radius: 3px;
+}
+
+.skills-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
 .skills-title {
   font-size: 13px;
   font-weight: 600;

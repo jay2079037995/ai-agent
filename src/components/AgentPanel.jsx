@@ -37,6 +37,9 @@ export default function AgentPanel({ agentId, onEditAgent }) {
       setServiceStatuses(statuses);
     };
     checkStatuses();
+    // Re-check after delay to catch async auto-started services
+    const timer = setTimeout(checkStatuses, 3000);
+    return () => clearTimeout(timer);
   }, [agentId, agent?.skills]);
 
   // Auto-scroll
