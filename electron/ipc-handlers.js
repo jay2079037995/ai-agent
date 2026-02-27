@@ -24,6 +24,7 @@ const {
 const runtime = require("./runtime");
 const { agentLoop } = require("./agent-loop");
 const { getAvailableSkills, loadSkillCode, downloadSkill } = require("./skill-registry");
+const { dispatchTaskToAgent, getTaskExecutions } = require("./collaboration");
 
 function registerIpcHandlers() {
   // --- Agent CRUD ---
@@ -186,6 +187,14 @@ function registerIpcHandlers() {
     return task;
   });
 
+  ipcMain.handle("task:dispatch", (event, taskId) => {
+    const { getTask } = require("./store");
+    const task = getTask(taskId);
+    if (!task) return { error: "Task not found" };
+    dispatchTaskToAgent(task);
+    return { ok: true };
+  });
+
   ipcMain.handle("task:get-all", () => {
     return getAllTasks();
   });
@@ -204,6 +213,10 @@ function registerIpcHandlers() {
       try { w.webContents.send("tasks-updated"); } catch (_) {}
     });
     return true;
+  });
+
+  ipcMain.handle("task:get-executions", () => {
+    return getTaskExecutions();
   });
 
   // --- UI state persistence ---

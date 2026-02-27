@@ -253,6 +253,8 @@ function sendProgress(win, agentId, type, data) {
       win.webContents.send("agent-progress", { agentId, type, ...data });
     }
   } catch (_) {}
+  // Also update task execution tracking (if this agent is working on a task)
+  collaboration.updateTaskExecution(agentId, { type, ...data });
 }
 
 // --- Main agent loop ---

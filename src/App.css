@@ -1176,6 +1176,98 @@ body {
   color: var(--text-primary);
 }
 
+.btn-tiny.btn-dispatch {
+  color: var(--accent-green);
+  font-weight: 600;
+}
+
+.btn-tiny.btn-dispatch:hover {
+  border-color: var(--accent-green);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+/* Task execution status */
+.kanban-card-execution {
+  margin: 4px 0;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  border: 1px solid var(--border-primary);
+}
+
+.kanban-card-execution.exec-running {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.kanban-card-execution.exec-completed {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.kanban-card-execution.exec-failed {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.exec-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.exec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.exec-dot.exec-running {
+  background: #3b82f6;
+  animation: exec-pulse 1.5s ease-in-out infinite;
+}
+
+.exec-dot.exec-completed {
+  background: #22c55e;
+}
+
+.exec-dot.exec-failed {
+  background: #ef4444;
+}
+
+@keyframes exec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.exec-agent {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.exec-status {
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+.exec-detail {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.exec-tool {
+  color: var(--accent-info);
+}
+
+.kanban-card-no-exec {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin: 4px 0;
+  font-style: italic;
+}
+
 .btn-tiny.btn-danger {
   color: var(--accent-error);
 }

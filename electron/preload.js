@@ -30,10 +30,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getAllTasks: () => ipcRenderer.invoke("task:get-all"),
   updateTask: (id, updates) => ipcRenderer.invoke("task:update", id, updates),
   deleteTask: (id) => ipcRenderer.invoke("task:delete", id),
+  dispatchTask: (id) => ipcRenderer.invoke("task:dispatch", id),
+  getTaskExecutions: () => ipcRenderer.invoke("task:get-executions"),
   onTasksUpdated: (callback) => {
     const handler = () => callback();
     ipcRenderer.on("tasks-updated", handler);
     return () => ipcRenderer.removeListener("tasks-updated", handler);
+  },
+  onTaskExecutionUpdated: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("task-execution-updated", handler);
+    return () => ipcRenderer.removeListener("task-execution-updated", handler);
   },
 
   // --- UI state ---

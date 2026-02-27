@@ -4,6 +4,7 @@ const { migrateIfNeeded, getAllAgents, getAgent } = require("./store");
 const { registerIpcHandlers } = require("./ipc-handlers");
 const { loadSkillCode, getSkillManifest } = require("./skill-registry");
 const { agentLoop } = require("./agent-loop");
+const { startTaskScanner, stopTaskScanner } = require("./collaboration");
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -25,6 +26,7 @@ app.whenReady().then(() => {
   migrateIfNeeded();
   registerIpcHandlers();
   createWindow();
+  startTaskScanner();
 
   // Auto-start service skills (e.g. Telegram) for agents that have autoStart enabled
   const agents = getAllAgents();
@@ -51,6 +53,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopTaskScanner();
   // Stop all running service skills
   const agents = getAllAgents();
   for (const [id, agent] of Object.entries(agents)) {

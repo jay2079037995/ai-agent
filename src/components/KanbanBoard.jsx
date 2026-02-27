@@ -114,9 +114,34 @@ function TaskModal({ task, agents, onSave, onClose }) {
   );
 }
 
-function KanbanCard({ task, agents, onEdit, onMove, onDelete }) {
+function ExecutionStatus({ execution }) {
+  if (!execution) return null;
+
+  const isRunning = execution.status === "running";
+  const statusClass = isRunning ? "exec-running" : execution.status === "completed" ? "exec-completed" : "exec-failed";
+  const statusLabel = isRunning ? "执行中" : execution.status === "completed" ? "已完成" : "失败";
+
+  return (
+    <div className={`kanban-card-execution ${statusClass}`}>
+      <div className="exec-header">
+        <span className={`exec-dot ${statusClass}`} />
+        <span className="exec-agent">{execution.agentName}</span>
+        <span className="exec-status">{statusLabel}</span>
+      </div>
+      {isRunning && (
+        <div className="exec-detail">
+          Step {execution.step || 1}
+          {execution.toolName && <span className="exec-tool"> · {execution.toolName}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KanbanCard({ task, agents, execution, onEdit, onDelete, onDispatch }) {
   const agent = task.assignedAgentId ? agents[task.assignedAgentId] : null;
   const roleName = ROLE_OPTIONS.find((r) => r.value === task.assignedRole)?.label || task.assignedRole;
+  const canDispatch = task.status === "backlog" && task.assignedRole && task.assignedRole !== "general";
 
   return (
     <div className="kanban-card" onClick={() => onEdit(task)}>
@@ -128,12 +153,13 @@ function KanbanCard({ task, agents, onEdit, onMove, onDelete }) {
           <span className="kanban-card-role">{roleName}</span>
           {agent && <span className="kanban-card-agent">{agent.name}</span>}
         </div>
+        <ExecutionStatus execution={execution} />
+        {!execution && task.status !== "done" && (
+          <div className="kanban-card-no-exec">暂无 Agent 执行</div>
+        )}
         <div className="kanban-card-actions" onClick={(e) => e.stopPropagation()}>
-          {task.status !== "backlog" && (
-            <button className="btn-tiny" onClick={() => onMove(task.id, task.status === "done" ? "in_progress" : "backlog")}>←</button>
-          )}
-          {task.status !== "done" && (
-            <button className="btn-tiny" onClick={() => onMove(task.id, task.status === "backlog" ? "in_progress" : "done")}>→</button>
+          {canDispatch && (
+            <button className="btn-tiny btn-dispatch" onClick={() => onDispatch(task.id)}>Dispatch</button>
           )}
           <button className="btn-tiny btn-danger" onClick={() => onDelete(task.id)}>×</button>
         </div>
@@ -145,6 +171,7 @@ function KanbanCard({ task, agents, onEdit, onMove, onDelete }) {
 export default function KanbanBoard() {
   const { state } = useAgents();
   const [tasks, setTasks] = useState({});
+  const [executions, setExecutions] = useState({});
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
 
@@ -159,6 +186,20 @@ export default function KanbanBoard() {
     const unsub = window.electronAPI.onTasksUpdated(loadTasks);
     return unsub;
   }, []);
+
+  // Load initial task executions and listen for updates
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    window.electronAPI.getTaskExecutions?.().then((data) => {
+      if (data) setExecutions(data);
+    });
+    if (!window.electronAPI.onTaskExecutionUpdated) return;
+    const unsub = window.electronAPI.onTaskExecutionUpdated((data) => {
+      setExecutions(data || {});
+    });
+    return unsub;
+  }, []);
+
 
   const handleSave = async (taskData) => {
     if (!window.electronAPI) return;
@@ -187,6 +228,11 @@ export default function KanbanBoard() {
   const handleEdit = (task) => {
     setEditingTask(task);
     setShowModal(true);
+  };
+
+  const handleDispatch = async (taskId) => {
+    if (!window.electronAPI) return;
+    await window.electronAPI.dispatchTask(taskId);
   };
 
   const handleNew = () => {
@@ -220,9 +266,11 @@ export default function KanbanBoard() {
                     key={task.id}
                     task={task}
                     agents={state.agents}
+                    execution={executions[task.id] || null}
                     onEdit={handleEdit}
                     onMove={handleMove}
                     onDelete={handleDelete}
+                    onDispatch={handleDispatch}
                   />
                 ))}
                 {colTasks.length === 0 && <div className="kanban-empty">No tasks</div>}

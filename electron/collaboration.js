@@ -21,6 +21,17 @@ function setAgentLoop(fn) {
   _agentLoop = fn;
 }
 
+// Track dispatched task IDs to avoid re-dispatching
+const _dispatchedTasks = new Set();
+// Track agents currently busy processing a task
+const _busyAgents = new Set();
+
+// Task execution status: taskId → { agentId, agentName, step, toolName, status }
+// status: "running" | "completed" | "failed"
+const _taskExecutions = {};
+// Reverse map: agentId → taskId (for progress event correlation)
+const _agentTaskMap = {};
+
 // Tool descriptions injected into system prompt
 const COLLABORATION_TOOLS = [
   {
@@ -70,6 +81,118 @@ function broadcastTasksUpdated() {
   });
 }
 
+// Broadcast task-execution-updated to all windows
+function broadcastTaskExecutionUpdated() {
+  const snapshot = { ..._taskExecutions };
+  BrowserWindow.getAllWindows().forEach((w) => {
+    try { w.webContents.send("task-execution-updated", snapshot); } catch (_) {}
+  });
+}
+
+/**
+ * Called from agent-loop whenever a progress event is emitted.
+ * Correlates agentId → taskId and updates execution status.
+ */
+function updateTaskExecution(agentId, progressData) {
+  const taskId = _agentTaskMap[agentId];
+  if (!taskId) return; // agent is not working on a tracked task
+
+  const exec = _taskExecutions[taskId];
+  if (!exec || exec.status !== "running") return;
+
+  if (progressData.type === "iteration") {
+    exec.step = progressData.step;
+  } else if (progressData.type === "tool-call") {
+    exec.toolName = progressData.name;
+  } else if (progressData.type === "tool-result") {
+    exec.toolName = null; // tool finished
+  }
+
+  broadcastTaskExecutionUpdated();
+}
+
+function getTaskExecutions() {
+  return { ..._taskExecutions };
+}
+
+/**
+ * Auto-dispatch: find an agent matching the task's role and trigger it.
+ * If assignedAgentId is set, use that agent directly.
+ * Otherwise, find the first agent with the matching role.
+ */
+function dispatchTaskToAgent(task) {
+  if (!_agentLoop) return;
+  if (_dispatchedTasks.has(task.id)) return;
+
+  let targetAgent = null;
+
+  // Prefer specific agent
+  if (task.assignedAgentId) {
+    targetAgent = getAgent(task.assignedAgentId);
+  }
+
+  // Fallback: find an agent with the matching role that is not busy
+  if (!targetAgent && task.assignedRole && task.assignedRole !== "general") {
+    const agents = getAllAgents();
+    targetAgent = Object.values(agents).find(
+      (a) => a.role === task.assignedRole && !_busyAgents.has(a.id)
+    );
+    // If all matching agents are busy, skip for now (scanner will retry later)
+    if (!targetAgent) return;
+  }
+
+  if (!targetAgent) return;
+  if (_busyAgents.has(targetAgent.id)) return;
+
+  // Mark task as dispatched and agent as busy
+  _dispatchedTasks.add(task.id);
+  _busyAgents.add(targetAgent.id);
+
+  // Track execution status
+  _taskExecutions[task.id] = {
+    agentId: targetAgent.id,
+    agentName: targetAgent.name,
+    step: 0,
+    toolName: null,
+    status: "running",
+  };
+  _agentTaskMap[targetAgent.id] = task.id;
+  broadcastTaskExecutionUpdated();
+
+  // Auto-move task to in_progress
+  if (task.status === "backlog") {
+    updateTask(task.id, { status: "in_progress" });
+    broadcastTasksUpdated();
+  }
+
+  const roleLabel = ROLES[targetAgent.role]?.label || targetAgent.role;
+  const prompt = `[新任务分配给你] 任务标题: ${task.title}\n任务描述: ${task.description || "(无描述)"}\n优先级: ${task.priority}\n任务ID: ${task.id}\n\n请根据你的角色（${roleLabel}）处理这个任务。任务状态会自动更新，你只需专注于完成任务内容。如需与其他 agent 协作，可使用 send_message_to_agent。`;
+
+  setImmediate(async () => {
+    try {
+      console.log(`Auto-dispatching task "${task.title}" to agent "${targetAgent.name}" (${targetAgent.role})`);
+      await _agentLoop(prompt, [], targetAgent, targetAgent.id);
+      // Mark completed and auto-move to done
+      if (_taskExecutions[task.id]) {
+        _taskExecutions[task.id].status = "completed";
+        _taskExecutions[task.id].toolName = null;
+        broadcastTaskExecutionUpdated();
+      }
+      updateTask(task.id, { status: "done" });
+      broadcastTasksUpdated();
+    } catch (e) {
+      console.log(`Task dispatch to agent ${targetAgent.id} failed: ${e.message}`);
+      if (_taskExecutions[task.id]) {
+        _taskExecutions[task.id].status = "failed";
+        broadcastTaskExecutionUpdated();
+      }
+    } finally {
+      _busyAgents.delete(targetAgent.id);
+      delete _agentTaskMap[targetAgent.id];
+    }
+  });
+}
+
 async function executeCollaborationTool(toolName, args, callingAgentId) {
   switch (toolName) {
     case "list_agents": {
@@ -111,7 +234,7 @@ async function executeCollaborationTool(toolName, args, callingAgentId) {
         createdBy: callingAgentId,
       });
       broadcastTasksUpdated();
-      return `Task created: ${task.title} (id: ${task.id}, role: ${task.assignedRole}, priority: ${task.priority})`;
+      return `Task created: ${task.title} (id: ${task.id}, role: ${task.assignedRole}, priority: ${task.priority}). Use send_message_to_agent to notify the assigned agent if needed.`;
     }
 
     case "update_task": {
@@ -160,10 +283,49 @@ async function executeCollaborationTool(toolName, args, callingAgentId) {
   }
 }
 
+// --- Task scanner ---
+// Periodically scans backlog tasks and dispatches to matching agents.
+
+let _scanInterval = null;
+const SCAN_INTERVAL_MS = 30_000;
+
+function scanAndDispatchTasks() {
+  if (!_agentLoop) return;
+  const tasks = getAllTasks();
+  const backlog = Object.values(tasks)
+    .filter((t) => t.status === "backlog" && !_dispatchedTasks.has(t.id) && t.assignedRole && t.assignedRole !== "general")
+    .sort((a, b) => {
+      const p = { high: 0, medium: 1, low: 2 };
+      return (p[a.priority] ?? 1) - (p[b.priority] ?? 1) || a.createdAt - b.createdAt;
+    });
+  for (const task of backlog) {
+    dispatchTaskToAgent(task);
+  }
+}
+
+function startTaskScanner() {
+  if (_scanInterval) return;
+  console.log(`Task scanner started (${SCAN_INTERVAL_MS / 1000}s interval)`);
+  setTimeout(scanAndDispatchTasks, 5000);
+  _scanInterval = setInterval(scanAndDispatchTasks, SCAN_INTERVAL_MS);
+}
+
+function stopTaskScanner() {
+  if (_scanInterval) {
+    clearInterval(_scanInterval);
+    _scanInterval = null;
+  }
+}
+
 module.exports = {
   COLLABORATION_TOOLS,
   isCollaborationTool,
   getToolDescriptions,
   executeCollaborationTool,
+  dispatchTaskToAgent,
   setAgentLoop,
+  startTaskScanner,
+  stopTaskScanner,
+  updateTaskExecution,
+  getTaskExecutions,
 };
