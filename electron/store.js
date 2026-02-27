@@ -1,4 +1,5 @@
-const Store = require("electron-store");
+const ElectronStore = require("electron-store");
+const Store = ElectronStore.default || ElectronStore;
 const { v4: uuidv4 } = require("uuid");
 
 const schema = {
@@ -22,7 +23,7 @@ const schema = {
   },
 };
 
-const store = new Store({ schema, name: "ai-agent-config" });
+const store = new Store({ schema, name: "ai-agent-config", projectName: "ai-agent" });
 
 // --- Agent CRUD ---
 
