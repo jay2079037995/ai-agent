@@ -2,14 +2,14 @@ import React, { useState, useRef, useEffect } from "react";
 import "./App.css";
 
 const MODES = [
-  { id: "agent", label: "AI Agent", icon: "⚡", placeholder: "Ask AI to do something..." },
-  { id: "shell", label: "Shell", icon: ">_", placeholder: "Enter shell command..." },
-  { id: "search", label: "Search", icon: "🔍", placeholder: "Search the web..." },
+  { id: "agent", label: "agent", icon: "⚡", placeholder: "ask ai to do something..." },
+  { id: "shell", label: "shell", icon: ">_", placeholder: "enter shell command..." },
+  { id: "search", label: "search", icon: "🔍", placeholder: "search the web..." },
 ];
 
 const MODELS = [
-  { id: "minimax", label: "MiniMax-M2.5" },
-  { id: "ollama", label: "Ollama gemma3:4b" },
+  { id: "minimax", label: "minimax-m2.5" },
+  { id: "ollama", label: "ollama gemma3:4b" },
 ];
 
 function App() {
@@ -21,8 +21,14 @@ function App() {
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [tgRunning, setTgRunning] = useState(false);
   const [tgHasToken, setTgHasToken] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
   const outputRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (window.electronAPI?.getCurrentModel) {
@@ -171,7 +177,7 @@ function App() {
     <div className="terminal" onClick={() => showModelMenu && setShowModelMenu(false)}>
       <div className="terminal-header">
         <div className="header-left">
-          <span className="terminal-title">Pack</span>
+          <span className="terminal-title">~ ai-agent</span>
           <div className="mode-tabs">
             {MODES.map((m) => (
               <button
@@ -187,6 +193,13 @@ function App() {
           </div>
         </div>
         <div className="header-right">
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "switch to light mode" : "switch to dark mode"}
+          >
+            {theme === "dark" ? "light" : "dark"}
+          </button>
           <div className="model-selector" onClick={(e) => e.stopPropagation()}>
             <button
               className="model-badge"
@@ -234,7 +247,16 @@ function App() {
             {item.text}
           </pre>
         ))}
-        {running && <pre className="line running">{mode === "agent" ? "Agent thinking..." : "Processing..."}</pre>}
+        {running && (
+          <div className="line running">
+            <span className="thinking-dots">
+              <span className="thinking-dot" />
+              <span className="thinking-dot" />
+              <span className="thinking-dot" />
+            </span>
+            {mode === "agent" ? "agent thinking..." : "processing..."}
+          </div>
+        )}
       </div>
       <form className="terminal-input" onSubmit={handleSubmit}>
         <span className="prompt">{currentMode?.icon || "$"}</span>
