@@ -68,7 +68,7 @@ export default function AgentPanel({ agentId, onEditAgent }) {
           text = `\u2605 Skill matched: ${data.name} \u2014 ${data.description}`;
           break;
         case "iteration":
-          text = `\u27F3 Step ${data.step}/${data.max}`;
+          text = `\u27F3 Step ${data.step}`;
           break;
         case "tool-call":
           text = `\u2192 ${data.name}(${JSON.stringify(data.args || {})})`;

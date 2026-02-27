@@ -295,7 +295,7 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
   let pendingEmail = null;
 
   for (let i = 0; i < AGENT_MAX_ITERATIONS; i++) {
-    sendProgress(win, agentId, "iteration", { step: i + 1, max: AGENT_MAX_ITERATIONS });
+    sendProgress(win, agentId, "iteration", { step: i + 1 });
     const content = await chatWithProvider(messages, providerConfig);
     const toolCall = parseToolCall(content);
 
