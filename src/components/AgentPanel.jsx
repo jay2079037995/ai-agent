@@ -185,7 +185,7 @@ export default function AgentPanel({ agentId, onEditAgent }) {
             TG
           </button>
           <button className="header-btn" onClick={onEditAgent} title="Settings">
-            \u2699
+            <span style={{ fontSize: 14 }}>{"⚙"}</span> Edit
           </button>
           <button className="header-btn" onClick={handleNewSession} disabled={running} title="New Session">
             New
