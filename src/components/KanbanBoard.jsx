@@ -234,8 +234,11 @@ function KanbanCard({ task, agents, execution, onEdit, onDelete, onDispatch }) {
           </div>
         )}
         <ExecutionStatus execution={execution} />
-        {!execution && task.status !== "done" && (
+        {!execution && task.status !== "done" && task.status !== "repeat_queue" && (
           <div className="kanban-card-no-exec">暂无 Agent 执行</div>
+        )}
+        {task.lastOutput && (
+          <div className="kanban-card-output">{task.lastOutput}</div>
         )}
         <div className="kanban-card-actions" onClick={(e) => e.stopPropagation()}>
           {canDispatch && (

@@ -205,12 +205,15 @@ function dispatchTaskToAgent(task) {
 
   setImmediate(async () => {
     try {
-      console.log(`Auto-dispatching task "${task.title}" to agent "${targetAgent.name}" (${targetAgent.role})`);
-      await _agentLoop(prompt, [], targetAgent, targetAgent.id);
+      console.log(`[Task] Dispatching "${task.title}" → agent "${targetAgent.name}" (${targetAgent.role})`);
+      const result = await _agentLoop(prompt, [], targetAgent, targetAgent.id);
+      const output = result?.output || "";
+      const toolsUsed = (result?.trace || []).filter((t) => t.tool && !t.tool.startsWith("(")).length;
+      console.log(`[Task] "${task.title}" finished: ${toolsUsed} tool calls, output length=${output.length}`);
 
       // If task was cancelled during execution, skip completion and repeat
       if (_cancelledAgents.has(targetAgent.id)) {
-        console.log(`Task "${task.title}" was cancelled, skipping completion.`);
+        console.log(`[Task] "${task.title}" was cancelled, skipping completion.`);
         return;
       }
 
@@ -221,6 +224,8 @@ function dispatchTaskToAgent(task) {
         _taskExecutions[task.id].toolName = null;
         broadcastTaskExecutionUpdated();
       }
+      // Save agent output summary on the task
+      const lastOutput = output.length > 500 ? output.slice(0, 500) + "..." : output;
       // Repeat: move to repeat_queue with nextRunAt instead of done
       if (task.repeat) {
         const repeatMode = task.repeatMode || "daily";
@@ -238,10 +243,10 @@ function dispatchTaskToAgent(task) {
           nextRunAt = now + intervalMs;
         }
 
-        updateTask(task.id, { status: "repeat_queue", completedAt: now, nextRunAt });
+        updateTask(task.id, { status: "repeat_queue", completedAt: now, nextRunAt, lastOutput });
         _dispatchedTasks.delete(task.id);
       } else {
-        updateTask(task.id, { status: "done", completedAt: now });
+        updateTask(task.id, { status: "done", completedAt: now, lastOutput });
       }
       broadcastTasksUpdated();
     } catch (e) {
