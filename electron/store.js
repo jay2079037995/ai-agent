@@ -194,6 +194,11 @@ function createTask(taskData = {}) {
     assignedRole: taskData.assignedRole || "general",
     assignedAgentId: taskData.assignedAgentId || null,
     createdBy: taskData.createdBy || null,
+    triggerType: taskData.triggerType || "auto",
+    scheduledAt: taskData.scheduledAt || null,
+    repeat: taskData.repeat || false,
+    repeatMode: taskData.repeatMode || "daily",
+    repeatInterval: taskData.repeatInterval || null,
     createdAt: now,
     updatedAt: now,
   };
@@ -347,6 +352,23 @@ function migrateIfNeeded() {
     store.set("agents", agents);
     // Clean up old sharedKeys
     store.delete("sharedKeys");
+  }
+
+  // Migrate tasks: add trigger fields if missing
+  const tasks = store.get("tasks", {});
+  let tasksChanged = false;
+  for (const id of Object.keys(tasks)) {
+    const t = tasks[id];
+    if (t.triggerType === undefined) {
+      t.triggerType = "auto";
+      t.scheduledAt = null;
+      t.repeat = false;
+      t.repeatInterval = null;
+      tasksChanged = true;
+    }
+  }
+  if (tasksChanged) {
+    store.set("tasks", tasks);
   }
 }
 

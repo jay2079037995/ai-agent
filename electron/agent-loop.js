@@ -319,6 +319,10 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
 
   const maxIter = agentConfig.maxIterations || DEFAULT_MAX_ITERATIONS;
   for (let i = 0; i < maxIter; i++) {
+    // Check if task was cancelled (e.g. deleted from kanban)
+    if (collaboration.isAgentCancelled(agentId)) {
+      return { output: "[任务已取消]", trace: toolTrace };
+    }
     sendProgress(win, agentId, "iteration", { step: i + 1 });
     const content = await chatWithProvider(messages, providerConfig);
     const toolCall = parseToolCall(content);

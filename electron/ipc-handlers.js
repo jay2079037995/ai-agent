@@ -24,7 +24,7 @@ const {
 const runtime = require("./runtime");
 const { agentLoop } = require("./agent-loop");
 const { getAvailableSkills, loadSkillCode, downloadSkill } = require("./skill-registry");
-const { dispatchTaskToAgent, getTaskExecutions } = require("./collaboration");
+const { dispatchTaskToAgent, getTaskExecutions, cancelTask } = require("./collaboration");
 
 function registerIpcHandlers() {
   // --- Agent CRUD ---
@@ -208,6 +208,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("task:delete", (event, taskId) => {
+    cancelTask(taskId);
     deleteTaskStore(taskId);
     BrowserWindow.getAllWindows().forEach((w) => {
       try { w.webContents.send("tasks-updated"); } catch (_) {}

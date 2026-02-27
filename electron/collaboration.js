@@ -31,6 +31,8 @@ const _busyAgents = new Set();
 const _taskExecutions = {};
 // Reverse map: agentId → taskId (for progress event correlation)
 const _agentTaskMap = {};
+// Cancelled tasks — agent loop checks this to abort early
+const _cancelledAgents = new Set();
 
 // Tool descriptions injected into system prompt
 const COLLABORATION_TOOLS = [
@@ -41,8 +43,8 @@ const COLLABORATION_TOOLS = [
   },
   {
     name: "create_task",
-    description: "Create a task on the kanban board. Use assignedRole to assign to a role (pm/developer/tester).",
-    args: { title: "string", description: "string", priority: "string (low/medium/high)", assignedRole: "string (general/pm/developer/tester)" },
+    description: "Create a task on the kanban board. Use assignedRole to assign to a role. triggerType: auto (default), scheduled, or manual.",
+    args: { title: "string", description: "string", priority: "string (low/medium/high)", assignedRole: "string (general/pm/developer/tester)", triggerType: "string (auto/scheduled/manual)", scheduledAt: "number (timestamp ms, for scheduled)", repeat: "boolean", repeatInterval: "number (minutes)" },
   },
   {
     name: "update_task",
@@ -116,6 +118,39 @@ function getTaskExecutions() {
 }
 
 /**
+ * Cancel a running task — marks the agent for early abort.
+ * Called when a task is deleted from the kanban board.
+ */
+function cancelTask(taskId) {
+  const exec = _taskExecutions[taskId];
+  if (exec && exec.status === "running") {
+    _cancelledAgents.add(exec.agentId);
+    exec.status = "cancelled";
+    broadcastTaskExecutionUpdated();
+    // Clean up maps
+    delete _agentTaskMap[exec.agentId];
+    _busyAgents.delete(exec.agentId);
+    _dispatchedTasks.delete(taskId);
+  }
+  delete _taskExecutions[taskId];
+}
+
+/**
+ * Check if an agent's current task has been cancelled.
+ * Called from agent-loop at each iteration.
+ */
+function isAgentCancelled(agentId) {
+  return _cancelledAgents.has(agentId);
+}
+
+/**
+ * Clear cancellation flag after agent loop exits.
+ */
+function clearAgentCancelled(agentId) {
+  _cancelledAgents.delete(agentId);
+}
+
+/**
  * Auto-dispatch: find an agent matching the task's role and trigger it.
  * If assignedAgentId is set, use that agent directly.
  * Otherwise, find the first agent with the matching role.
@@ -180,6 +215,39 @@ function dispatchTaskToAgent(task) {
       }
       updateTask(task.id, { status: "done" });
       broadcastTasksUpdated();
+
+      // Repeat: clone task back to backlog
+      if (task.repeat) {
+        const repeatMode = task.repeatMode || "daily";
+        const INTERVAL_MAP = { daily: 24 * 60, weekly: 7 * 24 * 60 };
+        const intervalMinutes = repeatMode === "custom" ? (task.repeatInterval || 60) : (INTERVAL_MAP[repeatMode] || INTERVAL_MAP.daily);
+        const intervalMs = intervalMinutes * 60 * 1000;
+
+        const cloneData = {
+          title: task.title,
+          description: task.description,
+          priority: task.priority,
+          assignedRole: task.assignedRole,
+          assignedAgentId: task.assignedAgentId || null,
+          createdBy: task.createdBy,
+          triggerType: task.triggerType,
+          repeat: task.repeat,
+          repeatMode: task.repeatMode,
+          repeatInterval: task.repeatInterval,
+          scheduledAt: null,
+        };
+
+        if (task.triggerType === "scheduled" && task.scheduledAt) {
+          let nextAt = task.scheduledAt + intervalMs;
+          while (nextAt <= Date.now()) {
+            nextAt += intervalMs;
+          }
+          cloneData.scheduledAt = nextAt;
+        }
+
+        createTask(cloneData);
+        broadcastTasksUpdated();
+      }
     } catch (e) {
       console.log(`Task dispatch to agent ${targetAgent.id} failed: ${e.message}`);
       if (_taskExecutions[task.id]) {
@@ -189,6 +257,7 @@ function dispatchTaskToAgent(task) {
     } finally {
       _busyAgents.delete(targetAgent.id);
       delete _agentTaskMap[targetAgent.id];
+      clearAgentCancelled(targetAgent.id);
     }
   });
 }
@@ -232,9 +301,14 @@ async function executeCollaborationTool(toolName, args, callingAgentId) {
         assignedRole: args.assignedRole || "general",
         assignedAgentId: args.assignedAgentId || null,
         createdBy: callingAgentId,
+        triggerType: args.triggerType || "auto",
+        scheduledAt: args.scheduledAt || null,
+        repeat: args.repeat || false,
+        repeatMode: args.repeatMode || "daily",
+        repeatInterval: args.repeatInterval || null,
       });
       broadcastTasksUpdated();
-      return `Task created: ${task.title} (id: ${task.id}, role: ${task.assignedRole}, priority: ${task.priority}). Use send_message_to_agent to notify the assigned agent if needed.`;
+      return `Task created: ${task.title} (id: ${task.id}, role: ${task.assignedRole}, trigger: ${task.triggerType}). Use send_message_to_agent to notify the assigned agent if needed.`;
     }
 
     case "update_task": {
@@ -292,13 +366,26 @@ const SCAN_INTERVAL_MS = 30_000;
 function scanAndDispatchTasks() {
   if (!_agentLoop) return;
   const tasks = getAllTasks();
-  const backlog = Object.values(tasks)
-    .filter((t) => t.status === "backlog" && !_dispatchedTasks.has(t.id) && t.assignedRole && t.assignedRole !== "general")
+  const now = Date.now();
+
+  const dispatchable = Object.values(tasks)
+    .filter((t) => {
+      if (t.status !== "backlog") return false;
+      if (_dispatchedTasks.has(t.id)) return false;
+      if (!t.assignedRole || t.assignedRole === "general") return false;
+
+      const triggerType = t.triggerType || "auto";
+      if (triggerType === "manual") return false;
+      if (triggerType === "scheduled" && (!t.scheduledAt || t.scheduledAt > now)) return false;
+
+      return true;
+    })
     .sort((a, b) => {
       const p = { high: 0, medium: 1, low: 2 };
       return (p[a.priority] ?? 1) - (p[b.priority] ?? 1) || a.createdAt - b.createdAt;
     });
-  for (const task of backlog) {
+
+  for (const task of dispatchable) {
     dispatchTaskToAgent(task);
   }
 }
@@ -328,4 +415,6 @@ module.exports = {
   stopTaskScanner,
   updateTaskExecution,
   getTaskExecutions,
+  cancelTask,
+  isAgentCancelled,
 };

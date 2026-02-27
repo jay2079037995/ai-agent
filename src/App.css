@@ -1153,6 +1153,26 @@ body {
   border-color: var(--accent-info);
 }
 
+.kanban-card-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.kanban-card-creator {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-card-time {
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
 .kanban-card-actions {
   display: flex;
   gap: 4px;
@@ -1266,6 +1286,45 @@ body {
   color: var(--text-tertiary);
   margin: 4px 0;
   font-style: italic;
+}
+
+.kanban-card-trigger {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+}
+
+.kanban-card-trigger.trigger-auto {
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+
+.kanban-card-trigger.trigger-scheduled {
+  color: var(--accent-warning);
+  border-color: var(--accent-warning);
+}
+
+.kanban-card-trigger.trigger-manual {
+  color: var(--text-tertiary);
+  border-color: var(--text-tertiary);
+}
+
+.kanban-card-repeat {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--accent-info);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.kanban-card-scheduled {
+  font-size: 10px;
+  color: var(--accent-warning);
+  margin-bottom: 2px;
 }
 
 .btn-tiny.btn-danger {

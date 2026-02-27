@@ -20,11 +20,24 @@ const ROLE_OPTIONS = [
   { value: "tester", label: "测试员" },
 ];
 
+const TRIGGER_TYPES = [
+  { value: "auto", label: "自动触发" },
+  { value: "scheduled", label: "定时触发" },
+  { value: "manual", label: "手动触发" },
+];
+
 const PRIORITY_COLORS = {
   high: "#e74c3c",
   medium: "#f39c12",
   low: "#2ecc71",
 };
+
+function formatTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function TaskModal({ task, agents, onSave, onClose }) {
   const [title, setTitle] = useState(task?.title || "");
@@ -32,7 +45,16 @@ function TaskModal({ task, agents, onSave, onClose }) {
   const [priority, setPriority] = useState(task?.priority || "medium");
   const [assignedRole, setAssignedRole] = useState(task?.assignedRole || "general");
   const [assignedAgentId, setAssignedAgentId] = useState(task?.assignedAgentId || "");
-  const [status, setStatus] = useState(task?.status || "backlog");
+  const [triggerType, setTriggerType] = useState(task?.triggerType || "auto");
+  const [scheduledAt, setScheduledAt] = useState(() => {
+    if (!task?.scheduledAt) return "";
+    const d = new Date(task.scheduledAt);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
+  const [repeat, setRepeat] = useState(task?.repeat || false);
+  const [repeatMode, setRepeatMode] = useState(task?.repeatMode || "daily");
+  const [repeatInterval, setRepeatInterval] = useState(task?.repeatInterval || 60);
 
   const handleSubmit = () => {
     if (!title.trim()) return;
@@ -43,7 +65,11 @@ function TaskModal({ task, agents, onSave, onClose }) {
       priority,
       assignedRole,
       assignedAgentId: assignedAgentId || null,
-      status,
+      triggerType,
+      scheduledAt: triggerType === "scheduled" && scheduledAt ? new Date(scheduledAt).getTime() : null,
+      repeat,
+      repeatMode: repeat ? repeatMode : null,
+      repeatInterval: repeat && repeatMode === "custom" ? Number(repeatInterval) || 60 : null,
     });
   };
 
@@ -74,14 +100,6 @@ function TaskModal({ task, agents, onSave, onClose }) {
             </select>
           </label>
           <label className="form-label">
-            Status
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="form-select">
-              {COLUMNS.map((c) => (
-                <option key={c.key} value={c.key}>{c.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="form-label">
             Assigned Role
             <select value={assignedRole} onChange={(e) => { setAssignedRole(e.target.value); setAssignedAgentId(""); }} className="form-select">
               {ROLE_OPTIONS.map((r) => (
@@ -99,6 +117,43 @@ function TaskModal({ task, agents, onSave, onClose }) {
                 ))}
               </select>
             </label>
+          )}
+          <div className="form-divider" />
+          <label className="form-label">
+            触发方式
+            <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} className="form-select">
+              {TRIGGER_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </label>
+          {triggerType === "scheduled" && (
+            <label className="form-label">
+              计划执行时间
+              <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="form-input" />
+            </label>
+          )}
+          <label className="form-label-inline">
+            <input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} />
+            循环执行
+          </label>
+          {repeat && (
+            <>
+              <label className="form-label">
+                循环方式
+                <select value={repeatMode} onChange={(e) => setRepeatMode(e.target.value)} className="form-select">
+                  <option value="daily">每天</option>
+                  <option value="weekly">每周</option>
+                  <option value="custom">自定义间隔</option>
+                </select>
+              </label>
+              {repeatMode === "custom" && (
+                <label className="form-label">
+                  间隔 (分钟)
+                  <input type="number" value={repeatInterval} onChange={(e) => setRepeatInterval(e.target.value)} className="form-input" min={1} placeholder="60" />
+                </label>
+              )}
+            </>
           )}
         </div>
         <div className="modal-footer">
@@ -152,6 +207,21 @@ function KanbanCard({ task, agents, execution, onEdit, onDelete, onDispatch }) {
         <div className="kanban-card-meta">
           <span className="kanban-card-role">{roleName}</span>
           {agent && <span className="kanban-card-agent">{agent.name}</span>}
+          <span className={`kanban-card-trigger trigger-${task.triggerType || "auto"}`}>
+            {TRIGGER_TYPES.find((t) => t.value === (task.triggerType || "auto"))?.label || "自动"}
+          </span>
+          {task.repeat && <span className="kanban-card-repeat">
+            {task.repeatMode === "weekly" ? "每周" : task.repeatMode === "custom" ? `每${task.repeatInterval}分钟` : "每天"}
+          </span>}
+        </div>
+        {task.triggerType === "scheduled" && task.scheduledAt && (
+          <div className="kanban-card-scheduled">计划: {formatTime(task.scheduledAt)}</div>
+        )}
+        <div className="kanban-card-info">
+          <span className="kanban-card-creator">
+            {task.createdBy === "user" ? "用户创建" : task.createdBy ? `由 ${agents[task.createdBy]?.name || "Agent"} 创建` : "用户创建"}
+          </span>
+          {task.createdAt && <span className="kanban-card-time">{formatTime(task.createdAt)}</span>}
         </div>
         <ExecutionStatus execution={execution} />
         {!execution && task.status !== "done" && (
@@ -206,16 +276,10 @@ export default function KanbanBoard() {
     if (taskData.id) {
       await window.electronAPI.updateTask(taskData.id, taskData);
     } else {
-      await window.electronAPI.createTask(taskData);
+      await window.electronAPI.createTask({ ...taskData, createdBy: "user" });
     }
     setShowModal(false);
     setEditingTask(null);
-    loadTasks();
-  };
-
-  const handleMove = async (taskId, newStatus) => {
-    if (!window.electronAPI) return;
-    await window.electronAPI.updateTask(taskId, { status: newStatus });
     loadTasks();
   };
 
@@ -268,7 +332,6 @@ export default function KanbanBoard() {
                     agents={state.agents}
                     execution={executions[task.id] || null}
                     onEdit={handleEdit}
-                    onMove={handleMove}
                     onDelete={handleDelete}
                     onDispatch={handleDispatch}
                   />
