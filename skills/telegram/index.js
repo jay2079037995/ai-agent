@@ -150,4 +150,57 @@ function stopAll() {
   }
 }
 
-module.exports = { startService, stopService, isRunning, stopAll };
+// --- Tool execution (called by agent-loop when AI uses telegram_send / telegram_list_chats) ---
+
+async function executeTool(toolName, args, context) {
+  const agentId = context.agentId;
+  const entry = bots.get(agentId);
+
+  if (toolName === "telegram_list_chats") {
+    if (!entry) return "Telegram bot is not running for this agent. Start the service first.";
+    const chats = [];
+    for (const [chatId, history] of entry.sessions) {
+      chats.push({ chatId: String(chatId), messages: history.length });
+    }
+    if (chats.length === 0) return "No active chat sessions. A user must message the bot first.";
+    return JSON.stringify(chats, null, 2);
+  }
+
+  if (toolName === "telegram_send") {
+    if (!entry) return "Telegram bot is not running for this agent. Start the service first.";
+    const message = args.message || "";
+    if (!message) return "Error: message is required.";
+
+    const targetChatId = args.chatId;
+    let sent = 0;
+
+    if (targetChatId) {
+      // Send to specific chat
+      try {
+        await sendTelegramLong(entry.bot, targetChatId, message);
+        sent = 1;
+      } catch (e) {
+        return `Error sending to chat ${targetChatId}: ${e.message}`;
+      }
+    } else {
+      // Send to all active chats
+      if (entry.sessions.size === 0) {
+        return "No active chat sessions. A user must message the bot first.";
+      }
+      for (const [chatId] of entry.sessions) {
+        try {
+          await sendTelegramLong(entry.bot, chatId, message);
+          sent++;
+        } catch (e) {
+          console.log(`Telegram send error for chat ${chatId}: ${e.message}`);
+        }
+      }
+    }
+
+    return `Message sent to ${sent} chat(s).`;
+  }
+
+  return `Error: Unknown tool "${toolName}" in telegram skill.`;
+}
+
+module.exports = { startService, stopService, isRunning, stopAll, executeTool };

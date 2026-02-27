@@ -5,6 +5,7 @@ const COLUMNS = [
   { key: "backlog", label: "Backlog" },
   { key: "in_progress", label: "In Progress" },
   { key: "done", label: "Done" },
+  { key: "repeat_queue", label: "循环队列" },
 ];
 
 const PRIORITIES = [
@@ -214,8 +215,11 @@ function KanbanCard({ task, agents, execution, onEdit, onDelete, onDispatch }) {
             {task.repeatMode === "weekly" ? "每周" : task.repeatMode === "custom" ? `每${task.repeatInterval}分钟` : "每天"}
           </span>}
         </div>
-        {task.triggerType === "scheduled" && task.scheduledAt && (
+        {task.triggerType === "scheduled" && task.scheduledAt && task.status === "backlog" && (
           <div className="kanban-card-scheduled">计划: {formatTime(task.scheduledAt)}</div>
+        )}
+        {task.status === "repeat_queue" && task.nextRunAt && (
+          <div className="kanban-card-next-run">下次执行: {formatTime(task.nextRunAt)}</div>
         )}
         <div className="kanban-card-info">
           <span className="kanban-card-creator">
@@ -223,6 +227,12 @@ function KanbanCard({ task, agents, execution, onEdit, onDelete, onDispatch }) {
           </span>
           {task.createdAt && <span className="kanban-card-time">{formatTime(task.createdAt)}</span>}
         </div>
+        {(task.startedAt || task.completedAt) && (
+          <div className="kanban-card-times">
+            {task.startedAt && <span className="kanban-card-started">开始: {formatTime(task.startedAt)}</span>}
+            {task.completedAt && <span className="kanban-card-completed">完成: {formatTime(task.completedAt)}</span>}
+          </div>
+        )}
         <ExecutionStatus execution={execution} />
         {!execution && task.status !== "done" && (
           <div className="kanban-card-no-exec">暂无 Agent 执行</div>

@@ -199,6 +199,9 @@ function createTask(taskData = {}) {
     repeat: taskData.repeat || false,
     repeatMode: taskData.repeatMode || "daily",
     repeatInterval: taskData.repeatInterval || null,
+    startedAt: taskData.startedAt || null,
+    completedAt: taskData.completedAt || null,
+    nextRunAt: taskData.nextRunAt || null,
     createdAt: now,
     updatedAt: now,
   };

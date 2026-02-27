@@ -28,7 +28,7 @@ function buildSystemPrompt(agentId) {
     const manifest = getSkillManifest(skillName);
     if (!manifest) continue;
 
-    if (manifest.type === "tool-provider" && manifest.tools) {
+    if ((manifest.type === "tool-provider" || manifest.type === "service") && manifest.tools && manifest.tools.length > 0) {
       for (const tool of manifest.tools) {
         const argList = Object.keys(tool.args || {}).join(", ");
         toolDescriptions.push(`- ${tool.name}(${argList}): ${tool.description}`);
@@ -76,7 +76,8 @@ function buildToolRouter(agentId) {
   for (const [skillName, skillData] of Object.entries(agentSkills)) {
     if (!skillData.installed) continue;
     const manifest = getSkillManifest(skillName);
-    if (!manifest || manifest.type !== "tool-provider") continue;
+    if (!manifest) continue;
+    if (manifest.type !== "tool-provider" && !(manifest.type === "service" && manifest.tools?.length > 0)) continue;
 
     for (const tool of (manifest.tools || [])) {
       router[tool.name] = { skillName, manifest };

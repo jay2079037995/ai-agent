@@ -167,7 +167,7 @@ function dispatchTaskToAgent(task) {
   }
 
   // Fallback: find an agent with the matching role that is not busy
-  if (!targetAgent && task.assignedRole && task.assignedRole !== "general") {
+  if (!targetAgent && task.assignedRole) {
     const agents = getAllAgents();
     targetAgent = Object.values(agents).find(
       (a) => a.role === task.assignedRole && !_busyAgents.has(a.id)
@@ -194,9 +194,9 @@ function dispatchTaskToAgent(task) {
   _agentTaskMap[targetAgent.id] = task.id;
   broadcastTaskExecutionUpdated();
 
-  // Auto-move task to in_progress
+  // Auto-move task to in_progress and record start time
   if (task.status === "backlog") {
-    updateTask(task.id, { status: "in_progress" });
+    updateTask(task.id, { status: "in_progress", startedAt: Date.now() });
     broadcastTasksUpdated();
   }
 
@@ -207,47 +207,43 @@ function dispatchTaskToAgent(task) {
     try {
       console.log(`Auto-dispatching task "${task.title}" to agent "${targetAgent.name}" (${targetAgent.role})`);
       await _agentLoop(prompt, [], targetAgent, targetAgent.id);
+
+      // If task was cancelled during execution, skip completion and repeat
+      if (_cancelledAgents.has(targetAgent.id)) {
+        console.log(`Task "${task.title}" was cancelled, skipping completion.`);
+        return;
+      }
+
       // Mark completed and auto-move to done
+      const now = Date.now();
       if (_taskExecutions[task.id]) {
         _taskExecutions[task.id].status = "completed";
         _taskExecutions[task.id].toolName = null;
         broadcastTaskExecutionUpdated();
       }
-      updateTask(task.id, { status: "done" });
-      broadcastTasksUpdated();
-
-      // Repeat: clone task back to backlog
+      // Repeat: move to repeat_queue with nextRunAt instead of done
       if (task.repeat) {
         const repeatMode = task.repeatMode || "daily";
         const INTERVAL_MAP = { daily: 24 * 60, weekly: 7 * 24 * 60 };
         const intervalMinutes = repeatMode === "custom" ? (task.repeatInterval || 60) : (INTERVAL_MAP[repeatMode] || INTERVAL_MAP.daily);
         const intervalMs = intervalMinutes * 60 * 1000;
 
-        const cloneData = {
-          title: task.title,
-          description: task.description,
-          priority: task.priority,
-          assignedRole: task.assignedRole,
-          assignedAgentId: task.assignedAgentId || null,
-          createdBy: task.createdBy,
-          triggerType: task.triggerType,
-          repeat: task.repeat,
-          repeatMode: task.repeatMode,
-          repeatInterval: task.repeatInterval,
-          scheduledAt: null,
-        };
-
+        let nextRunAt;
         if (task.triggerType === "scheduled" && task.scheduledAt) {
-          let nextAt = task.scheduledAt + intervalMs;
-          while (nextAt <= Date.now()) {
-            nextAt += intervalMs;
+          nextRunAt = task.scheduledAt + intervalMs;
+          while (nextRunAt <= now) {
+            nextRunAt += intervalMs;
           }
-          cloneData.scheduledAt = nextAt;
+        } else {
+          nextRunAt = now + intervalMs;
         }
 
-        createTask(cloneData);
-        broadcastTasksUpdated();
+        updateTask(task.id, { status: "repeat_queue", completedAt: now, nextRunAt });
+        _dispatchedTasks.delete(task.id);
+      } else {
+        updateTask(task.id, { status: "done", completedAt: now });
       }
+      broadcastTasksUpdated();
     } catch (e) {
       console.log(`Task dispatch to agent ${targetAgent.id} failed: ${e.message}`);
       if (_taskExecutions[task.id]) {
@@ -368,15 +364,29 @@ function scanAndDispatchTasks() {
   const tasks = getAllTasks();
   const now = Date.now();
 
-  const dispatchable = Object.values(tasks)
+  // 1. Promote repeat_queue tasks whose nextRunAt has arrived back to backlog
+  for (const t of Object.values(tasks)) {
+    if (t.status !== "repeat_queue") continue;
+    if (!t.nextRunAt || t.nextRunAt > now) continue;
+    // Reset execution fields and move back to backlog for re-dispatch
+    updateTask(t.id, { status: "backlog", startedAt: null, completedAt: null, nextRunAt: null });
+    _dispatchedTasks.delete(t.id);
+  }
+
+  // Re-read tasks after potential promotions
+  const freshTasks = getAllTasks();
+
+  // 2. Dispatch backlog tasks
+  const dispatchable = Object.values(freshTasks)
     .filter((t) => {
       if (t.status !== "backlog") return false;
       if (_dispatchedTasks.has(t.id)) return false;
-      if (!t.assignedRole || t.assignedRole === "general") return false;
+      if (!t.assignedRole) return false;
 
       const triggerType = t.triggerType || "auto";
       if (triggerType === "manual") return false;
-      if (triggerType === "scheduled" && (!t.scheduledAt || t.scheduledAt > now)) return false;
+      if (t.scheduledAt && t.scheduledAt > now) return false;
+      if (triggerType === "scheduled" && !t.scheduledAt) return false;
 
       return true;
     })
@@ -388,6 +398,8 @@ function scanAndDispatchTasks() {
   for (const task of dispatchable) {
     dispatchTaskToAgent(task);
   }
+  // Broadcast if any repeat_queue tasks were promoted
+  broadcastTasksUpdated();
 }
 
 function startTaskScanner() {

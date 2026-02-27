@@ -8,6 +8,17 @@
     "token": { "type": "password", "default": "", "label": "Telegram Bot Token" },
     "autoStart": { "type": "boolean", "default": false, "label": "Auto-start on app launch" }
   },
-  "tools": [],
+  "tools": [
+    {
+      "name": "telegram_send",
+      "description": "Send a message to a Telegram chat. If chatId is omitted, sends to all active chats.",
+      "args": { "message": "string", "chatId": "string (optional)" }
+    },
+    {
+      "name": "telegram_list_chats",
+      "description": "List all active Telegram chat sessions for this agent.",
+      "args": {}
+    }
+  ],
   "dependencies": []
 }

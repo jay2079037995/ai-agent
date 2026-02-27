@@ -1327,6 +1327,29 @@ body {
   margin-bottom: 2px;
 }
 
+.kanban-card-next-run {
+  font-size: 10px;
+  color: var(--accent-info);
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.kanban-card-times {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.kanban-card-started {
+  color: var(--accent-primary);
+}
+
+.kanban-card-completed {
+  color: var(--accent-success);
+}
+
 .btn-tiny.btn-danger {
   color: var(--accent-error);
 }
