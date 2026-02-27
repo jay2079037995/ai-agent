@@ -768,3 +768,155 @@ body {
   background: var(--border-secondary);
   border-radius: 3px;
 }
+
+/* === Wide Modal (for skill config) === */
+
+.modal-wide {
+  width: 560px;
+  max-height: 85vh;
+}
+
+/* === Skills Section === */
+
+.skills-section {
+  margin-top: 4px;
+}
+
+.skills-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.skills-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.skill-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  transition: border-color 0.15s;
+}
+
+.skill-card:hover {
+  border-color: var(--border-secondary);
+}
+
+.skill-card.installed {
+  cursor: pointer;
+}
+
+.skill-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.skill-card-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.skill-type {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-surface);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border-primary);
+}
+
+.skill-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-expand {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.skill-description {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.skill-config {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* === Small Buttons === */
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-small.btn-primary {
+  background: var(--accent-green);
+  color: #fff;
+  border: none;
+}
+
+.btn-small.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-small.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-small.btn-danger {
+  background: transparent;
+  color: var(--accent-error);
+  border: 1px solid var(--accent-error);
+  padding: 3px 8px;
+}
+
+.btn-small.btn-danger:hover {
+  background: var(--error-bg);
+}
+
+/* === Download Row === */
+
+.download-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.download-row .form-input {
+  flex: 1;
+}
+
+.download-row .btn-small {
+  flex-shrink: 0;
+}

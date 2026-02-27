@@ -1,0 +1,11 @@
+{
+  "name": "weibo-post",
+  "displayName": "微博发帖",
+  "description": "在微博上发布动态/帖子，自动处理登录流程",
+  "version": "1.0.0",
+  "type": "workflow",
+  "configSchema": {},
+  "tools": [],
+  "dependencies": ["browser"],
+  "matchKeywords": ["微博", "weibo", "发微博", "发帖", "发动态"]
+}

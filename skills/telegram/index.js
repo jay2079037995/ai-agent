@@ -1,11 +1,7 @@
-/**
- * Per-agent Telegram bot lifecycle.
- */
-
 const TelegramBot = require("node-telegram-bot-api");
-const runtime = require("./runtime");
-const { getAgent } = require("./store");
-const { agentLoop } = require("./agent-loop");
+
+// Per-agent bot instances
+const bots = new Map(); // agentId -> { bot, sessions: Map<chatId, history[]> }
 
 async function sendTelegramLong(bot, chatId, text) {
   const MAX_LEN = 4000;
@@ -27,26 +23,29 @@ async function sendTelegramLong(bot, chatId, text) {
   }
 }
 
-function startTelegramBot(agentId) {
-  const agentConfig = getAgent(agentId);
-  if (!agentConfig) return false;
-
-  const token = agentConfig.telegram?.token;
+/**
+ * Start a Telegram bot for an agent.
+ * @param {string} agentId
+ * @param {object} config - { token, autoStart }
+ * @param {object} deps - { getAgentConfig, agentLoop }
+ */
+function startService(agentId, config, deps) {
+  const token = config.token || "";
   if (!token || token === "YOUR_BOT_TOKEN_HERE") {
     console.log(`Telegram bot for agent ${agentId}: missing or placeholder token.`);
     return false;
   }
 
-  if (runtime.isTelegramRunning(agentId)) {
+  if (bots.has(agentId)) {
     console.log(`Telegram bot for agent ${agentId} already running.`);
     return true;
   }
 
   try {
     const bot = new TelegramBot(token, { polling: true });
-    runtime.setTelegramBot(agentId, bot);
-    runtime.setTelegramRunning(agentId, true);
-    console.log(`Telegram bot started for agent ${agentId} (${agentConfig.name}).`);
+    const sessions = new Map();
+    bots.set(agentId, { bot, sessions });
+    console.log(`Telegram bot started for agent ${agentId}.`);
 
     bot.on("message", async (msg) => {
       const chatId = msg.chat.id;
@@ -54,47 +53,50 @@ function startTelegramBot(agentId) {
       if (!text) return;
 
       if (text === "/start") {
+        const agentConfig = deps.getAgentConfig(agentId);
         await bot.sendMessage(
           chatId,
-          `${agentConfig.name} AI Agent 已连接。\n\n直接发送消息即可提问，AI 可以调用搜索、浏览器、Shell 等工具帮你完成任务。\n\n命令：\n/clear — 清空对话历史\n/model — 查看当前模型\n/status — 查看状态`
+          `${agentConfig.name} AI Agent 已连接。\n\n直接发送消息即可提问，AI 可以调用已安装的 skill 工具帮你完成任务。\n\n命令：\n/clear — 清空对话历史\n/model — 查看当前模型\n/status — 查看状态`
         );
         return;
       }
 
       if (text === "/clear") {
-        runtime.getTelegramSession(agentId, chatId).length = 0;
+        sessions.set(chatId, []);
         await bot.sendMessage(chatId, "对话历史已清空。");
         return;
       }
 
       if (text === "/model") {
-        const cfg = getAgent(agentId);
-        const label = `${cfg.provider.type} — ${cfg.provider.model}`;
+        const agentConfig = deps.getAgentConfig(agentId);
+        const label = `${agentConfig.provider.type} — ${agentConfig.provider.model}`;
         await bot.sendMessage(chatId, `当前模型: ${label}`);
         return;
       }
 
       if (text === "/status") {
-        const session = runtime.getTelegramSession(agentId, chatId);
-        const cfg = getAgent(agentId);
+        const session = sessions.get(chatId) || [];
+        const agentConfig = deps.getAgentConfig(agentId);
         await bot.sendMessage(
           chatId,
-          `状态: 运行中\n当前模型: ${cfg.provider.type} — ${cfg.provider.model}\n对话历史: ${session.length} 条消息`
+          `状态: 运行中\n当前模型: ${agentConfig.provider.type} — ${agentConfig.provider.model}\n对话历史: ${session.length} 条消息`
         );
         return;
       }
 
       // Regular message → agent loop
-      const session = runtime.getTelegramSession(agentId, chatId);
+      if (!sessions.has(chatId)) sessions.set(chatId, []);
+      const session = sessions.get(chatId);
       await bot.sendChatAction(chatId, "typing");
 
       try {
-        const cfg = getAgent(agentId);
-        const result = await agentLoop(text, session, cfg, agentId);
+        const agentConfig = deps.getAgentConfig(agentId);
+        const result = await deps.agentLoop(text, session, agentConfig, agentId);
 
         session.push({ role: "user", content: text });
         session.push({ role: "assistant", content: result.output || "" });
-        runtime.trimTelegramSession(agentId, chatId);
+        // Trim session to last 20 entries
+        while (session.length > 20) session.shift();
 
         const reply = result.output || "（AI 无回复）";
         await sendTelegramLong(bot, chatId, reply);
@@ -111,28 +113,28 @@ function startTelegramBot(agentId) {
     return true;
   } catch (err) {
     console.log(`Failed to start Telegram bot for agent ${agentId}: ${err.message}`);
-    runtime.setTelegramRunning(agentId, false);
-    runtime.setTelegramBot(agentId, null);
+    bots.delete(agentId);
     return false;
   }
 }
 
-function stopTelegramBot(agentId) {
-  const bot = runtime.getTelegramBot(agentId);
-  if (bot) {
-    bot.stopPolling();
-    runtime.setTelegramBot(agentId, null);
+function stopService(agentId) {
+  const entry = bots.get(agentId);
+  if (entry) {
+    entry.bot.stopPolling();
+    bots.delete(agentId);
   }
-  runtime.setTelegramRunning(agentId, false);
   console.log(`Telegram bot stopped for agent ${agentId}.`);
 }
 
-function stopAllTelegramBots() {
-  for (const [agentId] of runtime.getAll()) {
-    if (runtime.isTelegramRunning(agentId)) {
-      stopTelegramBot(agentId);
-    }
+function isRunning(agentId) {
+  return bots.has(agentId);
+}
+
+function stopAll() {
+  for (const [agentId] of bots) {
+    stopService(agentId);
   }
 }
 
-module.exports = { startTelegramBot, stopTelegramBot, stopAllTelegramBots };
+module.exports = { startService, stopService, isRunning, stopAll };

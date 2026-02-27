@@ -1,11 +1,3 @@
-# 百度搜索
-
-## Meta
-- match: 百度, baidu, 搜索, search, 在百度
-- description: 在百度搜索引擎中搜索内容
-
-## Steps
-
 ### Step 1: 打开百度
 调用 browser_action navigate 到 https://www.baidu.com/
 

@@ -1,0 +1,11 @@
+{
+  "name": "github-operations",
+  "displayName": "GitHub 操作",
+  "description": "在 GitHub 上执行常见操作，包括创建仓库、提交 Issue、创建 Pull Request、Star/Fork 等，自动处理登录流程",
+  "version": "1.0.0",
+  "type": "workflow",
+  "configSchema": {},
+  "tools": [],
+  "dependencies": ["browser"],
+  "matchKeywords": ["github", "repo", "仓库", "创建仓库", "new repo", "issue", "pull request", "pr", "star", "fork", "clone", "提交issue", "创建issue"]
+}

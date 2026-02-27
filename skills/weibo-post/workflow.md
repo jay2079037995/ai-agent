@@ -1,11 +1,3 @@
-# 微博发帖
-
-## Meta
-- match: 微博, weibo, 发微博, 发帖, 发动态
-- description: 在微博上发布动态/帖子，自动处理登录流程
-
-## Steps
-
 ### Step 1: 打开微博
 调用 browser_action navigate 到 https://weibo.com/
 
@@ -20,13 +12,11 @@
 
 ### Step 4: 等待扫码登录
 调用 browser_action wait_for_page_change(timeout=120, interval=5) 等待用户扫码。
-等待结束后，调用 browser_action read 再次检查。
 - 如果登录成功 → 继续 Step 5
-- 如果仍未登录 → 告诉用户"登录超时，请重试"，结束流程
+- 如果仍未登录 → 告诉用户"登录超时，请重试"
 
 ### Step 5: 打开发帖界面
 找到"发微博"按钮或文本输入区域。
-如果在首页，通常顶部有发帖文本框。
 点击文本输入区域使其获得焦点。
 
 ### Step 6: 编写内容

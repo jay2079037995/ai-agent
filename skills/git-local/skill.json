@@ -1,0 +1,11 @@
+{
+  "name": "git-local",
+  "displayName": "Git 本地操作",
+  "description": "在 macOS 上执行 Git 本地操作，包括初始化仓库、提交代码、推送拉取、分支管理、查看日志等",
+  "version": "1.0.0",
+  "type": "workflow",
+  "configSchema": {},
+  "tools": [],
+  "dependencies": ["shell"],
+  "matchKeywords": ["git", "提交", "commit", "push", "pull", "推送", "拉取", "分支", "branch", "merge", "合并", "clone", "克隆", "初始化", "git init", "暂存", "stash", "回退", "reset", "checkout", "diff", "log", "代码管理", "版本控制"]
+}

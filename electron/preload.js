@@ -13,16 +13,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
   agentChat: (agentId, prompt) => ipcRenderer.invoke("agent:chat", agentId, prompt),
   agentClearSession: (agentId) => ipcRenderer.invoke("agent:clear-session", agentId),
   agentExecCommand: (agentId, command) => ipcRenderer.invoke("agent:exec-command", agentId, command),
-  agentTelegramStatus: (agentId) => ipcRenderer.invoke("agent:telegram-status", agentId),
-  agentTelegramToggle: (agentId) => ipcRenderer.invoke("agent:telegram-toggle", agentId),
 
-  // --- Shared ---
-  braveSearch: (query) => ipcRenderer.invoke("brave-search", query),
-  listSkills: () => ipcRenderer.invoke("list-skills"),
+  // --- Skill management ---
+  listAvailableSkills: () => ipcRenderer.invoke("skill:list-available"),
+  installSkill: (agentId, skillName, config) => ipcRenderer.invoke("skill:install", agentId, skillName, config),
+  uninstallSkill: (agentId, skillName) => ipcRenderer.invoke("skill:uninstall", agentId, skillName),
+  updateSkillConfig: (agentId, skillName, config) => ipcRenderer.invoke("skill:update-config", agentId, skillName, config),
+  downloadSkill: (url) => ipcRenderer.invoke("skill:download", url),
 
-  // --- Shared keys ---
-  getSharedKeys: () => ipcRenderer.invoke("shared-keys:get"),
-  setSharedKeys: (keys) => ipcRenderer.invoke("shared-keys:set", keys),
+  // --- Skill service management ---
+  skillServiceStatus: (agentId, skillName) => ipcRenderer.invoke("skill:service-status", agentId, skillName),
+  skillServiceToggle: (agentId, skillName) => ipcRenderer.invoke("skill:service-toggle", agentId, skillName),
 
   // --- UI state ---
   getUIState: () => ipcRenderer.invoke("ui:get-state"),

@@ -1,0 +1,16 @@
+{
+  "name": "webpage",
+  "displayName": "Webpage Creator",
+  "description": "Create HTML webpages and open them in the browser",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {},
+  "tools": [
+    {
+      "name": "create_webpage",
+      "description": "Creates a webpage and opens it in the browser. Call with a title first, then provide HTML code separately. Use when user asks to create/develop a web page, demo, or interactive HTML content.",
+      "args": { "title": "string" }
+    }
+  ],
+  "dependencies": []
+}

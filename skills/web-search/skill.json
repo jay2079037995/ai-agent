@@ -1,0 +1,18 @@
+{
+  "name": "web-search",
+  "displayName": "Web Search",
+  "description": "Search the web using Brave Search API for real-time information",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {
+    "braveApiKey": { "type": "password", "default": "", "label": "Brave Search API key" }
+  },
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Searches the web and returns top results. Use this for real-time info like weather, news, prices.",
+      "args": { "query": "string" }
+    }
+  ],
+  "dependencies": []
+}

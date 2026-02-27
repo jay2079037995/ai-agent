@@ -1,0 +1,13 @@
+{
+  "name": "telegram",
+  "displayName": "Telegram Bot",
+  "description": "Connect a Telegram bot to this agent for remote messaging",
+  "version": "1.0.0",
+  "type": "service",
+  "configSchema": {
+    "token": { "type": "password", "default": "", "label": "Telegram Bot Token" },
+    "autoStart": { "type": "boolean", "default": false, "label": "Auto-start on app launch" }
+  },
+  "tools": [],
+  "dependencies": []
+}

@@ -1,0 +1,21 @@
+{
+  "name": "notes",
+  "displayName": "macOS Notes",
+  "description": "Read and create notes in macOS Notes app",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {},
+  "tools": [
+    {
+      "name": "read_notes",
+      "description": "Reads the latest notes from macOS Notes app. count defaults to 1. Returns note titles and content.",
+      "args": { "count": "number" }
+    },
+    {
+      "name": "create_note",
+      "description": "Creates a new note in macOS Notes app with the given title and body text.",
+      "args": { "title": "string", "body": "string" }
+    }
+  ],
+  "dependencies": []
+}

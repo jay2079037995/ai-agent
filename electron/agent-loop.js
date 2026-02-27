@@ -1,43 +1,41 @@
 /**
  * Agent loop — multi-step tool-calling loop.
- * Accepts agentConfig (provider, workDir) and sessionHistory explicitly.
+ * Dynamically builds system prompt and tool routing from installed skills.
  */
 
 const { BrowserWindow } = require("electron");
 const { chatWithProvider } = require("./providers");
-const { executeTool, gmailSendEmail, saveAndOpenWebpage } = require("./tools");
-const { aiMatchSkill, matchSkill, loadAllSkills } = require("./skills");
-const { getSharedKeys } = require("./store");
-const path = require("path");
+const { getAgentSkills } = require("./store");
+const { getSkillManifest, loadSkillCode, loadWorkflow } = require("./skill-registry");
 
 const AGENT_MAX_ITERATIONS = 15;
 
-const TOOL_SYSTEM_PROMPT = `You are a helpful AI assistant with access to the following tools:
+// --- Dynamic system prompt building ---
 
-- get_current_time(): Returns the current date and time of the user's computer.
-- web_search(query): Searches the web and returns top results. Use this for real-time info like weather, news, prices.
-- run_shell_command(command): Executes a shell command on macOS and returns stdout/stderr.
-- run_javascript(code): Evaluates a JavaScript expression and returns the result. Good for calculations.
-- open_url(url): Opens a URL in the user's default browser. Use for "open browser", "open website", etc.
-- open_application(name): Opens an application on macOS by name. Use for "open Finder", "open Terminal", "open Safari", etc.
-- read_notes(count): Reads the latest notes from macOS Notes app. count defaults to 1. Returns note titles and content.
-- create_note(title, body): Creates a new note in macOS Notes app with the given title and body text.
-- create_webpage(title): Creates a webpage and opens it in the browser. Call this with a title first, then you will be asked to provide the HTML code separately. Use this when user asks to create/develop a web page, demo, or interactive HTML content.
-- read_emails(count): Reads the latest emails from Gmail inbox. count defaults to 5. Returns sender, subject, date, and preview text.
-- send_email(to, subject): Sends an email via Gmail. Call this with "to" (recipient email) and "subject" first, then you will be asked to provide the email body text separately.
-- browser_action(action, ...): Controls Chrome browser automatically. Actions:
-  - navigate(url): Opens Chrome and goes to the URL. Returns visible interactive elements with index numbers.
-  - click(index): Clicks element by its index number from the elements list.
-  - type(index, text): Types text into an input element by its index number.
-  - key_press(key): Presses a keyboard key. key can be: Enter, Tab, Escape, Backspace, ArrowDown, ArrowUp, etc.
-  - scroll(direction): Scrolls page "up" or "down".
-  - read(): Re-reads the current page's interactive elements.
-  - wait_for_page_change(timeout, interval): Waits for the page to change (URL, title, or content). Polls every "interval" seconds (default 5), up to "timeout" seconds (default 60). Use this when waiting for user action like QR code scan, SMS verification, or page redirect.
-  - screenshot(): Takes a screenshot of the current page and saves it to a file.
-  - back(): Goes back to previous page.
-  - close(): Closes the browser.
-  After each action, you'll receive an updated list of interactive elements with index numbers. Use these index numbers for click and type actions. Example: {"tool_call":{"name":"browser_action","args":{"action":"navigate","url":"https://google.com"}}}
-- list_skills(): Lists all available automation skills from the skills/ directory.
+function buildSystemPrompt(agentId) {
+  const agentSkills = getAgentSkills(agentId);
+  const toolDescriptions = [];
+
+  for (const [skillName, skillData] of Object.entries(agentSkills)) {
+    if (!skillData.installed) continue;
+    const manifest = getSkillManifest(skillName);
+    if (!manifest) continue;
+
+    if (manifest.type === "tool-provider" && manifest.tools) {
+      for (const tool of manifest.tools) {
+        const argList = Object.keys(tool.args || {}).join(", ");
+        toolDescriptions.push(`- ${tool.name}(${argList}): ${tool.description}`);
+      }
+    }
+  }
+
+  if (toolDescriptions.length === 0) {
+    return `You are a helpful AI assistant. Answer the user's questions directly. Always answer in the same language as the user's question.`;
+  }
+
+  return `You are a helpful AI assistant with access to the following tools:
+
+${toolDescriptions.join("\n")}
 
 Rules:
 1. If you need real-time or local information, you MUST use a tool. Do NOT guess or make up answers.
@@ -47,10 +45,122 @@ Rules:
 4. When you have enough information, respond with a plain text answer (NOT JSON).
 5. Always answer in the same language as the user's question.
 6. When the user asks to "open a website", "go to a page", "search on Baidu/Google", "register an account", "log in", "fill a form", or any task that involves interacting with a webpage, you MUST use browser_action. Use web_search only when you need to look up information, NOT when the user wants you to operate a browser.
-7. When using browser_action, you MUST continue step by step. After navigate, read the elements list, then use click/type to interact with the page. Do NOT give up or say you cannot do it. You have full ability to control the browser. For example, to search on Baidu: first navigate to baidu.com, then type in the search box, then click the search button. To register an account: navigate to the signup page, type in each form field one by one, then click submit. Always keep going until the task is done.
-8. If a page requires QR code scanning, SMS verification, CAPTCHA, or any manual user action, tell the user what to do, then use wait_for_page_change to poll until the page changes. Example flow: navigate to login page → see QR code → tell user "Please scan the QR code" → call wait_for_page_change(timeout=60, interval=5) → page changes → continue with the task.
+7. When using browser_action, you MUST continue step by step. After navigate, read the elements list, then use click/type to interact with the page. Do NOT give up or say you cannot do it.
+8. If a page requires QR code scanning, SMS verification, CAPTCHA, or any manual user action, tell the user what to do, then use wait_for_page_change to poll until the page changes.
 
 `;
+}
+
+// --- Tool routing ---
+
+function buildToolRouter(agentId) {
+  const agentSkills = getAgentSkills(agentId);
+  const router = {}; // { toolName: { skillName, manifest } }
+
+  for (const [skillName, skillData] of Object.entries(agentSkills)) {
+    if (!skillData.installed) continue;
+    const manifest = getSkillManifest(skillName);
+    if (!manifest || manifest.type !== "tool-provider") continue;
+
+    for (const tool of (manifest.tools || [])) {
+      router[tool.name] = { skillName, manifest };
+    }
+  }
+
+  return router;
+}
+
+async function executeToolViaSkill(toolName, args, router, context) {
+  const route = router[toolName];
+  if (!route) return `Error: Unknown tool "${toolName}". This tool is not available with current skills.`;
+
+  const code = loadSkillCode(route.skillName);
+  if (!code || !code.executeTool) {
+    return `Error: Skill "${route.skillName}" has no executeTool function.`;
+  }
+
+  const agentSkills = context.agentSkills || {};
+  const skillConfig = agentSkills[route.skillName]?.config || {};
+  const toolContext = { ...context, config: skillConfig };
+
+  return await code.executeTool(toolName, args, toolContext);
+}
+
+// --- Workflow matching ---
+
+function matchWorkflowSkill(userPrompt, agentId) {
+  const agentSkills = getAgentSkills(agentId);
+  const lower = userPrompt.toLowerCase();
+  let best = null;
+  let bestScore = 0;
+
+  for (const [skillName, skillData] of Object.entries(agentSkills)) {
+    if (!skillData.installed) continue;
+    const manifest = getSkillManifest(skillName);
+    if (!manifest || manifest.type !== "workflow") continue;
+
+    const keywords = manifest.matchKeywords || [];
+    const hits = keywords.filter((k) => lower.includes(k)).length;
+    if (hits >= 2 && hits > bestScore) {
+      bestScore = hits;
+      best = { skillName, manifest };
+    }
+  }
+
+  return best;
+}
+
+async function aiMatchWorkflowSkill(userPrompt, agentId, providerConfig) {
+  const agentSkills = getAgentSkills(agentId);
+  const workflows = [];
+
+  for (const [skillName, skillData] of Object.entries(agentSkills)) {
+    if (!skillData.installed) continue;
+    const manifest = getSkillManifest(skillName);
+    if (!manifest || manifest.type !== "workflow") continue;
+    workflows.push({ skillName, manifest });
+  }
+
+  if (workflows.length === 0) return null;
+
+  const summaries = workflows
+    .map((w, i) => `[${i}] ${w.manifest.displayName} — ${w.manifest.description}`)
+    .join("\n");
+
+  const matchPrompt = `You are a skill-matching assistant. The user wants to perform a task. Below is a list of available automation workflows.
+
+Your job: Decide which workflow (if any) is the best match for the user's task. If a workflow is clearly relevant, respond with ONLY its index number (e.g. "0" or "2"). If no workflow is relevant, respond with ONLY the word "none".
+
+Do NOT explain. Do NOT output anything other than the index number or "none".
+
+Available workflows:
+${summaries}
+
+User task: ${userPrompt}
+
+Your answer:`;
+
+  try {
+    const response = await chatWithProvider([{ role: "user", content: matchPrompt }], providerConfig);
+    const answer = response.trim().toLowerCase();
+    console.log(`AI workflow matching response: "${answer}"`);
+
+    if (answer === "none" || answer.includes("none")) return null;
+
+    const indexMatch = answer.match(/(\d+)/);
+    if (!indexMatch) return null;
+    const idx = parseInt(indexMatch[1]);
+    if (idx < 0 || idx >= workflows.length) return null;
+
+    console.log(`AI matched workflow: [${idx}] ${workflows[idx].manifest.displayName}`);
+    return workflows[idx];
+  } catch (e) {
+    console.log(`AI workflow matching failed: ${e.message}, falling back to keyword matching`);
+    return matchWorkflowSkill(userPrompt, agentId);
+  }
+}
+
+// --- JSON tool call parser ---
 
 function parseToolCall(content) {
   const stripped = content.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "").trim();
@@ -114,6 +224,8 @@ function parseToolCall(content) {
   return null;
 }
 
+// --- Progress helper ---
+
 function sendProgress(win, agentId, type, data) {
   try {
     if (win && !win.isDestroyed()) {
@@ -122,45 +234,45 @@ function sendProgress(win, agentId, type, data) {
   } catch (_) {}
 }
 
-/**
- * @param {string} userPrompt
- * @param {Array} sessionHistory
- * @param {object} agentConfig - { provider: { type, apiKey, model, endpoint }, workDir }
- * @param {string} agentId
- */
+// --- Main agent loop ---
+
 async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
   const win = BrowserWindow.getAllWindows()[0] || null;
   const providerConfig = agentConfig.provider;
-  const sharedKeys = getSharedKeys();
-  const toolContext = { workDir: agentConfig.workDir, sharedKeys };
+  const agentSkills = agentConfig.skills || {};
+  const toolContext = { workDir: agentConfig.workDir, agentSkills };
+  const router = buildToolRouter(agentId);
 
-  // Phase 1: AI-driven skill matching
-  sendProgress(win, agentId, "phase", { message: "Matching skills..." });
-  let skill = await aiMatchSkill(userPrompt, providerConfig);
+  // Phase 1: Workflow matching
+  sendProgress(win, agentId, "phase", { message: "Matching workflows..." });
+  let workflow = await aiMatchWorkflowSkill(userPrompt, agentId, providerConfig);
 
-  if (!skill) {
-    skill = matchSkill(userPrompt);
-    if (skill) console.log(`Keyword fallback matched skill: ${skill.name}`);
+  if (!workflow) {
+    workflow = matchWorkflowSkill(userPrompt, agentId);
+    if (workflow) console.log(`Keyword fallback matched workflow: ${workflow.manifest.displayName}`);
   }
 
-  if (skill) {
-    sendProgress(win, agentId, "skill", { name: skill.name, description: skill.description });
+  if (workflow) {
+    sendProgress(win, agentId, "skill", { name: workflow.manifest.displayName, description: workflow.manifest.description });
   } else {
-    sendProgress(win, agentId, "phase", { message: "No skill matched, using general agent mode" });
+    sendProgress(win, agentId, "phase", { message: "No workflow matched, using general agent mode" });
   }
 
   // Phase 2: Build system prompt
   let systemContent;
-  if (skill) {
+  const basePrompt = buildSystemPrompt(agentId);
+
+  if (workflow) {
+    const workflowContent = loadWorkflow(workflow.skillName) || "";
     systemContent =
-      TOOL_SYSTEM_PROMPT +
-      `\n\n=== SKILL WORKFLOW: ${skill.name} ===\n` +
-      `${skill.description}\n\n` +
-      `You MUST follow these steps in order. Do NOT skip steps or invent your own steps. Follow the skill workflow precisely:\n\n${skill.steps}\n\n` +
+      basePrompt +
+      `\n\n=== SKILL WORKFLOW: ${workflow.manifest.displayName} ===\n` +
+      `${workflow.manifest.description}\n\n` +
+      `You MUST follow these steps in order. Do NOT skip steps or invent your own steps. Follow the skill workflow precisely:\n\n${workflowContent}\n\n` +
       `=== END SKILL WORKFLOW ===\n\n` +
       `User request: ${userPrompt}`;
   } else {
-    systemContent = TOOL_SYSTEM_PROMPT + userPrompt;
+    systemContent = basePrompt + userPrompt;
   }
 
   const messages = [];
@@ -176,8 +288,8 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
   messages.push({ role: "user", content: systemContent });
 
   const toolTrace = [];
-  if (skill) {
-    toolTrace.push({ tool: "(skill matched by AI)", args: { name: skill.name, description: skill.description } });
+  if (workflow) {
+    toolTrace.push({ tool: "(workflow matched)", args: { name: workflow.manifest.displayName, description: workflow.manifest.description } });
   }
   let pendingWebpageTitle = null;
   let pendingEmail = null;
@@ -192,7 +304,13 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
       sendProgress(win, agentId, "tool-call", { name: "send_email", args: { to: pendingEmail.to, subject: pendingEmail.subject } });
       let result;
       try {
-        result = await gmailSendEmail(sharedKeys.gmailUser, sharedKeys.gmailAppPassword, pendingEmail.to, pendingEmail.subject, content);
+        const emailCode = loadSkillCode("email");
+        if (emailCode && emailCode.gmailSendEmail) {
+          const emailConfig = agentSkills["email"]?.config || {};
+          result = await emailCode.gmailSendEmail(emailConfig.gmailUser, emailConfig.gmailAppPassword, pendingEmail.to, pendingEmail.subject, content);
+        } else {
+          result = "Error: Email skill not available.";
+        }
       } catch (e) {
         result = `Gmail send error: ${e.message}`;
       }
@@ -207,7 +325,13 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
     // Pending webpage HTML
     if (pendingWebpageTitle && !toolCall) {
       sendProgress(win, agentId, "tool-call", { name: "create_webpage", args: { title: pendingWebpageTitle } });
-      const result = await saveAndOpenWebpage(pendingWebpageTitle, content);
+      const webpageCode = loadSkillCode("webpage");
+      let result;
+      if (webpageCode && webpageCode.saveAndOpenWebpage) {
+        result = await webpageCode.saveAndOpenWebpage(pendingWebpageTitle, content);
+      } else {
+        result = "Error: Webpage skill not available.";
+      }
       sendProgress(win, agentId, "tool-result", { name: "create_webpage", result: result.slice(0, 200) });
       toolTrace.push({ tool: "create_webpage (saved)", args: { title: pendingWebpageTitle } });
       pendingWebpageTitle = null;
@@ -233,20 +357,8 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
     toolTrace.push({ tool: name, args });
     sendProgress(win, agentId, "tool-call", { name, args });
 
-    // Handle list_skills specially
-    let toolResult;
-    if (name === "list_skills") {
-      const skills = loadAllSkills();
-      if (skills.length === 0) {
-        toolResult = "No skills found. Add .md files to the skills/ directory.";
-      } else {
-        toolResult = skills
-          .map((s) => `- ${s.name}: ${s.description}\n  Keywords: ${s.matchKeywords.join(", ")}\n  File: ${path.basename(s.filePath)}`)
-          .join("\n\n");
-      }
-    } else {
-      toolResult = await executeTool(name, args, toolContext);
-    }
+    // Execute tool via skill router
+    const toolResult = await executeToolViaSkill(name, args, router, toolContext);
 
     if (toolResult === "__WEBPAGE_PENDING__") {
       pendingWebpageTitle = args.title || "page";
@@ -281,4 +393,4 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
   return { output: finalContent, trace: toolTrace };
 }
 
-module.exports = { agentLoop, parseToolCall, TOOL_SYSTEM_PROMPT };
+module.exports = { agentLoop, parseToolCall, buildSystemPrompt, buildToolRouter };

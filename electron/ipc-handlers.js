@@ -2,7 +2,7 @@
  * All IPC handlers — registered once from main.js.
  */
 
-const { ipcMain, BrowserWindow } = require("electron");
+const { ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const {
   createAgent,
@@ -10,18 +10,16 @@ const {
   getAgent,
   updateAgent,
   deleteAgent,
-  getSharedKeys,
-  setSharedKeys,
+  installSkill,
+  uninstallSkill,
+  updateSkillConfig,
+  getAgentSkills,
   getUIState,
   setUIState,
 } = require("./store");
 const runtime = require("./runtime");
-const { chatWithProvider, ollamaGenerate } = require("./providers");
 const { agentLoop } = require("./agent-loop");
-const { braveSearch } = require("./tools");
-const { loadAllSkills } = require("./skills");
-const { startTelegramBot, stopTelegramBot } = require("./telegram");
-const path = require("path");
+const { getAvailableSkills, loadSkillCode, downloadSkill } = require("./skill-registry");
 
 function registerIpcHandlers() {
   // --- Agent CRUD ---
@@ -39,9 +37,14 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("agent:delete", (event, agentId) => {
-    // Stop telegram if running
-    if (runtime.isTelegramRunning(agentId)) {
-      stopTelegramBot(agentId);
+    // Stop any running services for this agent
+    const agentSkills = getAgentSkills(agentId);
+    for (const [skillName, skillData] of Object.entries(agentSkills)) {
+      if (!skillData.installed) continue;
+      const code = loadSkillCode(skillName);
+      if (code && code.isRunning && code.isRunning(agentId)) {
+        code.stopService(agentId);
+      }
     }
     runtime.remove(agentId);
     deleteAgent(agentId);
@@ -93,74 +96,80 @@ function registerIpcHandlers() {
     });
   });
 
-  // --- Per-agent Telegram ---
+  // --- Skill management ---
 
-  ipcMain.handle("agent:telegram-status", (event, agentId) => {
-    const agentConfig = getAgent(agentId);
-    const token = agentConfig?.telegram?.token;
+  ipcMain.handle("skill:list-available", () => {
+    return getAvailableSkills();
+  });
+
+  ipcMain.handle("skill:install", (event, agentId, skillName, config) => {
+    return installSkill(agentId, skillName, config || {});
+  });
+
+  ipcMain.handle("skill:uninstall", (event, agentId, skillName) => {
+    // Stop service if running
+    const code = loadSkillCode(skillName);
+    if (code && code.isRunning && code.isRunning(agentId)) {
+      code.stopService(agentId);
+    }
+    return uninstallSkill(agentId, skillName);
+  });
+
+  ipcMain.handle("skill:update-config", (event, agentId, skillName, config) => {
+    return updateSkillConfig(agentId, skillName, config);
+  });
+
+  ipcMain.handle("skill:download", async (event, url) => {
+    return await downloadSkill(url);
+  });
+
+  // --- Skill service management ---
+
+  ipcMain.handle("skill:service-status", (event, agentId, skillName) => {
+    const { getSkillManifest } = require("./skill-registry");
+    const manifest = getSkillManifest(skillName);
+    if (!manifest || manifest.type !== "service") return { error: "not-a-service" };
+
+    const code = loadSkillCode(skillName);
+    if (!code || !code.isRunning) return { running: false, hasConfig: false };
+
+    const agentSkills = getAgentSkills(agentId);
+    const skillData = agentSkills[skillName];
+    const hasConfig = !!skillData?.config;
+
     return {
-      running: runtime.isTelegramRunning(agentId),
-      hasToken: !!token && token !== "YOUR_BOT_TOKEN_HERE",
+      running: code.isRunning(agentId),
+      hasConfig,
     };
   });
 
-  ipcMain.handle("agent:telegram-toggle", (event, agentId) => {
-    if (runtime.isTelegramRunning(agentId)) {
-      stopTelegramBot(agentId);
+  ipcMain.handle("skill:service-toggle", (event, agentId, skillName) => {
+    const { getSkillManifest } = require("./skill-registry");
+    const manifest = getSkillManifest(skillName);
+    if (!manifest || manifest.type !== "service") {
+      return { running: false, error: `${skillName}: not a service skill.` };
+    }
+
+    const code = loadSkillCode(skillName);
+    if (!code || !code.startService || !code.stopService) {
+      return { running: false, error: `${skillName}: missing service implementation.` };
+    }
+
+    if (code.isRunning && code.isRunning(agentId)) {
+      code.stopService(agentId);
       return { running: false };
     }
-    const ok = startTelegramBot(agentId);
-    return { running: ok, error: ok ? null : "启动失败，请检查 Bot Token 是否正确" };
-  });
 
-  // --- Shared: Brave Search (not agent-specific) ---
+    const agentSkills = getAgentSkills(agentId);
+    const skillConfig = agentSkills[skillName]?.config || {};
 
-  ipcMain.handle("brave-search", async (event, query) => {
-    const keys = getSharedKeys();
-    if (!keys.braveApiKey) return { error: "Brave API key not configured." };
+    const deps = {
+      getAgentConfig: (id) => getAgent(id),
+      agentLoop,
+    };
 
-    try {
-      const results = await braveSearch(keys.braveApiKey, query);
-      if (results.length === 0) return { output: "No results found." };
-
-      const context = results
-        .map((r, i) => `[${i + 1}] ${r.title}\n${r.description}`)
-        .join("\n\n");
-
-      // Use a simple generate for search summarization (try ollama first, fallback)
-      try {
-        const aiPrompt = `Based on the following search results for "${query}", provide a direct, concise answer in the same language as the query. Extract the key facts and give a clear answer.\n\nSearch results:\n${context}\n\nAnswer:`;
-        const aiAnswer = await ollamaGenerate(aiPrompt);
-        return { output: aiAnswer.trim() || context };
-      } catch (_) {
-        return { output: context };
-      }
-    } catch (err) {
-      return { error: err.message };
-    }
-  });
-
-  // --- Shared: Skills ---
-
-  ipcMain.handle("list-skills", () => {
-    const skills = loadAllSkills();
-    return skills.map((s) => ({
-      name: s.name,
-      description: s.description,
-      keywords: s.matchKeywords,
-      file: path.basename(s.filePath),
-    }));
-  });
-
-  // --- Shared keys management ---
-
-  ipcMain.handle("shared-keys:get", () => {
-    return getSharedKeys();
-  });
-
-  ipcMain.handle("shared-keys:set", (event, keys) => {
-    setSharedKeys(keys);
-    return getSharedKeys();
+    const ok = code.startService(agentId, skillConfig, deps);
+    return { running: ok, error: ok ? null : "启动失败，请检查配置" };
   });
 
   // --- UI state persistence ---

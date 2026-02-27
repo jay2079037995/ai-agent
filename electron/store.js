@@ -4,15 +4,6 @@ const { v4: uuidv4 } = require("uuid");
 
 const schema = {
   agents: { type: "object", default: {} },
-  sharedKeys: {
-    type: "object",
-    properties: {
-      braveApiKey: { type: "string", default: "" },
-      gmailUser: { type: "string", default: "" },
-      gmailAppPassword: { type: "string", default: "" },
-    },
-    default: {},
-  },
   uiState: {
     type: "object",
     properties: {
@@ -39,9 +30,8 @@ function createAgent(config = {}) {
       model: config.model || "",
       endpoint: config.endpoint || "",
     },
-    telegram: {
-      token: config.telegramToken || "",
-      enabled: config.telegramEnabled || false,
+    skills: config.skills || {
+      "basic-tools": { installed: true, config: {} },
     },
     workDir: config.workDir || process.env.HOME || "",
     createdAt: now,
@@ -75,14 +65,16 @@ function updateAgent(id, updates) {
   const agents = store.get("agents", {});
   if (!agents[id]) return null;
 
-  // Deep merge provider and telegram
+  // Deep merge provider
   if (updates.provider) {
     agents[id].provider = { ...agents[id].provider, ...updates.provider };
     delete updates.provider;
   }
-  if (updates.telegram) {
-    agents[id].telegram = { ...agents[id].telegram, ...updates.telegram };
-    delete updates.telegram;
+
+  // Deep merge skills
+  if (updates.skills) {
+    agents[id].skills = { ...agents[id].skills, ...updates.skills };
+    delete updates.skills;
   }
 
   Object.assign(agents[id], updates, { updatedAt: Date.now() });
@@ -104,15 +96,49 @@ function deleteAgent(id) {
   store.set("uiState", uiState);
 }
 
-// --- Shared keys ---
+// --- Per-agent skill management ---
 
-function getSharedKeys() {
-  return store.get("sharedKeys", {});
+function installSkill(agentId, skillName, config = {}) {
+  const agents = store.get("agents", {});
+  if (!agents[agentId]) return null;
+
+  if (!agents[agentId].skills) agents[agentId].skills = {};
+  agents[agentId].skills[skillName] = { installed: true, config };
+  agents[agentId].updatedAt = Date.now();
+  store.set("agents", agents);
+  return agents[agentId];
 }
 
-function setSharedKeys(keys) {
-  const current = store.get("sharedKeys", {});
-  store.set("sharedKeys", { ...current, ...keys });
+function uninstallSkill(agentId, skillName) {
+  const agents = store.get("agents", {});
+  if (!agents[agentId]) return null;
+
+  if (agents[agentId].skills) {
+    delete agents[agentId].skills[skillName];
+  }
+  agents[agentId].updatedAt = Date.now();
+  store.set("agents", agents);
+  return agents[agentId];
+}
+
+function updateSkillConfig(agentId, skillName, config) {
+  const agents = store.get("agents", {});
+  if (!agents[agentId]) return null;
+  if (!agents[agentId].skills || !agents[agentId].skills[skillName]) return null;
+
+  agents[agentId].skills[skillName].config = {
+    ...agents[agentId].skills[skillName].config,
+    ...config,
+  };
+  agents[agentId].updatedAt = Date.now();
+  store.set("agents", agents);
+  return agents[agentId];
+}
+
+function getAgentSkills(agentId) {
+  const agent = getAgent(agentId);
+  if (!agent) return {};
+  return agent.skills || {};
 }
 
 // --- UI state ---
@@ -146,26 +172,78 @@ function getDefaultEndpoint(providerType) {
   }
 }
 
-// --- Migration: seed default agent from env/hardcoded keys on first run ---
+// --- Migration ---
 
 function migrateIfNeeded() {
   const agents = store.get("agents", {});
-  if (Object.keys(agents).length > 0) return; // already has agents
 
-  // Create a default agent with minimax config
-  createAgent({
-    name: "Default Agent",
-    providerType: "minimax",
-    apiKey: "",
-    telegramToken: "",
-    telegramEnabled: false,
-  });
+  // If no agents, create a default one
+  if (Object.keys(agents).length === 0) {
+    createAgent({
+      name: "Default Agent",
+      providerType: "minimax",
+      skills: {
+        "basic-tools": { installed: true, config: {} },
+        "shell": { installed: true, config: {} },
+        "browser": { installed: true, config: {} },
+        "web-search": { installed: true, config: {} },
+        "notes": { installed: true, config: {} },
+        "webpage": { installed: true, config: {} },
+      },
+    });
+    const allAgents = store.get("agents", {});
+    const firstId = Object.keys(allAgents)[0];
+    if (firstId) {
+      store.set("uiState", { openTabs: [firstId], activeTabId: firstId });
+    }
+    return;
+  }
 
-  // Ensure UI state points to the new agent
-  const allAgents = store.get("agents", {});
-  const firstId = Object.keys(allAgents)[0];
-  if (firstId) {
-    store.set("uiState", { openTabs: [firstId], activeTabId: firstId });
+  // Migrate existing agents from old format to skill-based format
+  let changed = false;
+  for (const id of Object.keys(agents)) {
+    const agent = agents[id];
+
+    // If agent already has skills, skip
+    if (agent.skills) continue;
+
+    changed = true;
+    agent.skills = {
+      "basic-tools": { installed: true, config: {} },
+      "shell": { installed: true, config: {} },
+      "browser": { installed: true, config: {} },
+      "notes": { installed: true, config: {} },
+      "webpage": { installed: true, config: {} },
+    };
+
+    // Migrate sharedKeys (from old top-level) into skill configs
+    const sharedKeys = store.get("sharedKeys", {});
+    if (sharedKeys.braveApiKey) {
+      agent.skills["web-search"] = { installed: true, config: { braveApiKey: sharedKeys.braveApiKey } };
+    }
+    if (sharedKeys.gmailUser || sharedKeys.gmailAppPassword) {
+      agent.skills["email"] = {
+        installed: true,
+        config: { gmailUser: sharedKeys.gmailUser || "", gmailAppPassword: sharedKeys.gmailAppPassword || "" },
+      };
+    }
+
+    // Migrate old telegram field into telegram skill
+    if (agent.telegram && agent.telegram.token) {
+      agent.skills["telegram"] = {
+        installed: true,
+        config: { token: agent.telegram.token, autoStart: agent.telegram.enabled || false },
+      };
+    }
+    delete agent.telegram;
+
+    agent.updatedAt = Date.now();
+  }
+
+  if (changed) {
+    store.set("agents", agents);
+    // Clean up old sharedKeys
+    store.delete("sharedKeys");
   }
 }
 
@@ -176,8 +254,10 @@ module.exports = {
   getAllAgents,
   updateAgent,
   deleteAgent,
-  getSharedKeys,
-  setSharedKeys,
+  installSkill,
+  uninstallSkill,
+  updateSkillConfig,
+  getAgentSkills,
   getUIState,
   setUIState,
   getDefaultModel,

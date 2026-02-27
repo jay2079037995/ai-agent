@@ -1,0 +1,11 @@
+{
+  "name": "csdn-publish-blog",
+  "displayName": "CSDN 发表博客",
+  "description": "在 CSDN 上发表博客文章，自动处理登录和编辑流程",
+  "version": "1.0.0",
+  "type": "workflow",
+  "configSchema": {},
+  "tools": [],
+  "dependencies": ["browser"],
+  "matchKeywords": ["csdn", "博客", "blog", "发表", "发布文章", "写文章"]
+}

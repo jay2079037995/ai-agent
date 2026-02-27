@@ -22,10 +22,23 @@ export default function AgentConfigModal({ agentId, onClose }) {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [endpoint, setEndpoint] = useState("");
-  const [telegramToken, setTelegramToken] = useState("");
-  const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [workDir, setWorkDir] = useState("");
 
+  // Skill management
+  const [availableSkills, setAvailableSkills] = useState([]);
+  const [agentSkills, setAgentSkills] = useState({});
+  const [expandedSkill, setExpandedSkill] = useState(null);
+  const [skillConfigs, setSkillConfigs] = useState({});
+  const [downloadUrl, setDownloadUrl] = useState("");
+  const [downloading, setDownloading] = useState(false);
+
+  // Load available skills
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    window.electronAPI.listAvailableSkills().then(setAvailableSkills);
+  }, []);
+
+  // Load agent data
   useEffect(() => {
     if (agentId && state.agents[agentId]) {
       const agent = state.agents[agentId];
@@ -34,19 +47,22 @@ export default function AgentConfigModal({ agentId, onClose }) {
       setApiKey(agent.provider.apiKey);
       setModel(agent.provider.model);
       setEndpoint(agent.provider.endpoint);
-      setTelegramToken(agent.telegram?.token || "");
-      setTelegramEnabled(agent.telegram?.enabled || false);
       setWorkDir(agent.workDir || "");
+      setAgentSkills(agent.skills || {});
+      const configs = {};
+      for (const [skillName, skillData] of Object.entries(agent.skills || {})) {
+        if (skillData.config) configs[skillName] = { ...skillData.config };
+      }
+      setSkillConfigs(configs);
     } else {
-      // Defaults for new agent
       setName("");
       setProviderType("minimax");
       setApiKey("");
       setModel(DEFAULTS.minimax.model);
       setEndpoint(DEFAULTS.minimax.endpoint);
-      setTelegramToken("");
-      setTelegramEnabled(false);
       setWorkDir("");
+      setAgentSkills({ "basic-tools": { installed: true, config: {} } });
+      setSkillConfigs({});
     }
   }, [agentId, state.agents]);
 
@@ -54,6 +70,55 @@ export default function AgentConfigModal({ agentId, onClose }) {
     setProviderType(type);
     setModel(DEFAULTS[type]?.model || "");
     setEndpoint(DEFAULTS[type]?.endpoint || "");
+  };
+
+  const handleInstallSkill = (skillName) => {
+    const config = skillConfigs[skillName] || {};
+    setAgentSkills((prev) => ({
+      ...prev,
+      [skillName]: { installed: true, config },
+    }));
+  };
+
+  const handleUninstallSkill = (skillName) => {
+    setAgentSkills((prev) => {
+      const next = { ...prev };
+      delete next[skillName];
+      return next;
+    });
+    setExpandedSkill(null);
+  };
+
+  const handleSkillConfigChange = (skillName, key, value) => {
+    setSkillConfigs((prev) => ({
+      ...prev,
+      [skillName]: { ...(prev[skillName] || {}), [key]: value },
+    }));
+    setAgentSkills((prev) => ({
+      ...prev,
+      [skillName]: {
+        ...prev[skillName],
+        config: { ...(prev[skillName]?.config || {}), [key]: value },
+      },
+    }));
+  };
+
+  const handleDownloadSkill = async () => {
+    if (!downloadUrl.trim() || !window.electronAPI) return;
+    setDownloading(true);
+    try {
+      const result = await window.electronAPI.downloadSkill(downloadUrl.trim());
+      if (result.success) {
+        setDownloadUrl("");
+        const skills = await window.electronAPI.listAvailableSkills();
+        setAvailableSkills(skills);
+      } else {
+        alert(`Download failed: ${result.error}`);
+      }
+    } catch (e) {
+      alert(`Download error: ${e.message}`);
+    }
+    setDownloading(false);
   };
 
   const handleSave = async () => {
@@ -66,16 +131,15 @@ export default function AgentConfigModal({ agentId, onClose }) {
         apiKey,
         model,
         endpoint,
-        telegramToken,
-        telegramEnabled,
         workDir,
+        skills: agentSkills,
       });
       dispatch({ type: "ADD_AGENT", payload: agent });
     } else {
       const updates = {
         name,
         provider: { type: providerType, apiKey, model, endpoint },
-        telegram: { token: telegramToken, enabled: telegramEnabled },
+        skills: agentSkills,
         workDir,
       };
       const updated = await window.electronAPI.updateAgent(agentId, updates);
@@ -95,9 +159,12 @@ export default function AgentConfigModal({ agentId, onClose }) {
 
   const needsApiKey = providerType === "minimax" || providerType === "deepseek";
 
+  const installedSkillNames = Object.keys(agentSkills).filter((n) => agentSkills[n]?.installed);
+  const uninstalledSkills = availableSkills.filter((s) => !installedSkillNames.includes(s.name));
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{isNew ? "Create Agent" : "Edit Agent"}</h3>
           <button className="modal-close" onClick={onClose}>×</button>
@@ -105,22 +172,12 @@ export default function AgentConfigModal({ agentId, onClose }) {
         <div className="modal-body">
           <label className="form-label">
             Name
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Agent name"
-              className="form-input"
-            />
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Agent name" className="form-input" />
           </label>
 
           <label className="form-label">
             Provider
-            <select
-              value={providerType}
-              onChange={(e) => handleProviderChange(e.target.value)}
-              className="form-select"
-            >
+            <select value={providerType} onChange={(e) => handleProviderChange(e.target.value)} className="form-select">
               {PROVIDER_TYPES.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
@@ -130,82 +187,126 @@ export default function AgentConfigModal({ agentId, onClose }) {
           {needsApiKey && (
             <label className="form-label">
               API Key
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
-                className="form-input"
-              />
+              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." className="form-input" />
             </label>
           )}
 
           <label className="form-label">
             Model
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={DEFAULTS[providerType]?.model || "model name"}
-              className="form-input"
-            />
+            <input type="text" value={model} onChange={(e) => setModel(e.target.value)} placeholder={DEFAULTS[providerType]?.model || "model name"} className="form-input" />
           </label>
 
           <label className="form-label">
             Endpoint
-            <input
-              type="text"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              placeholder={DEFAULTS[providerType]?.endpoint || "API endpoint"}
-              className="form-input"
-            />
+            <input type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder={DEFAULTS[providerType]?.endpoint || "API endpoint"} className="form-input" />
           </label>
-
-          <div className="form-divider" />
-
-          <label className="form-label">
-            Telegram Bot Token
-            <input
-              type="text"
-              value={telegramToken}
-              onChange={(e) => setTelegramToken(e.target.value)}
-              placeholder="123456:ABC-DEF..."
-              className="form-input"
-            />
-          </label>
-
-          <label className="form-label-inline">
-            <input
-              type="checkbox"
-              checked={telegramEnabled}
-              onChange={(e) => setTelegramEnabled(e.target.checked)}
-            />
-            Auto-start Telegram Bot
-          </label>
-
-          <div className="form-divider" />
 
           <label className="form-label">
             Working Directory
-            <input
-              type="text"
-              value={workDir}
-              onChange={(e) => setWorkDir(e.target.value)}
-              placeholder="~/Documents"
-              className="form-input"
-            />
+            <input type="text" value={workDir} onChange={(e) => setWorkDir(e.target.value)} placeholder="~/Documents" className="form-input" />
           </label>
+
+          <div className="form-divider" />
+
+          {/* Installed Skills */}
+          <div className="skills-section">
+            <h4 className="skills-title">Installed Skills</h4>
+            {installedSkillNames.length === 0 && <p className="skills-empty">No skills installed</p>}
+            {installedSkillNames.map((skillName) => {
+              const manifest = availableSkills.find((s) => s.name === skillName);
+              const isExpanded = expandedSkill === skillName;
+              const configSchema = manifest?.configSchema || {};
+              const hasConfig = Object.keys(configSchema).length > 0;
+
+              return (
+                <div key={skillName} className="skill-card installed">
+                  <div className="skill-card-header" onClick={() => setExpandedSkill(isExpanded ? null : skillName)}>
+                    <div className="skill-card-info">
+                      <span className="skill-name">{manifest?.displayName || skillName}</span>
+                      <span className="skill-type">{manifest?.type || "unknown"}</span>
+                    </div>
+                    <div className="skill-card-actions">
+                      {hasConfig && <span className="skill-expand">{isExpanded ? "\u25B2" : "\u25BC"}</span>}
+                      <button className="btn-small btn-danger" onClick={(e) => { e.stopPropagation(); handleUninstallSkill(skillName); }}>
+                        Uninstall
+                      </button>
+                    </div>
+                  </div>
+                  {manifest && <p className="skill-description">{manifest.description}</p>}
+                  {isExpanded && hasConfig && (
+                    <div className="skill-config">
+                      {Object.entries(configSchema).map(([key, schema]) => (
+                        <label key={key} className="form-label">
+                          {schema.label || key}
+                          {schema.type === "boolean" ? (
+                            <input
+                              type="checkbox"
+                              checked={skillConfigs[skillName]?.[key] || false}
+                              onChange={(e) => handleSkillConfigChange(skillName, key, e.target.checked)}
+                              style={{ marginLeft: 8 }}
+                            />
+                          ) : (
+                            <input
+                              type={schema.type === "password" ? "password" : "text"}
+                              value={skillConfigs[skillName]?.[key] ?? schema.default ?? ""}
+                              onChange={(e) => handleSkillConfigChange(skillName, key, schema.type === "number" ? Number(e.target.value) : e.target.value)}
+                              placeholder={String(schema.default || "")}
+                              className="form-input"
+                            />
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Available Skills */}
+          {uninstalledSkills.length > 0 && (
+            <div className="skills-section">
+              <h4 className="skills-title">Available Skills</h4>
+              {uninstalledSkills.map((skill) => (
+                <div key={skill.name} className="skill-card available">
+                  <div className="skill-card-header">
+                    <div className="skill-card-info">
+                      <span className="skill-name">{skill.displayName}</span>
+                      <span className="skill-type">{skill.type}</span>
+                    </div>
+                    <button className="btn-small btn-primary" onClick={() => handleInstallSkill(skill.name)}>
+                      Install
+                    </button>
+                  </div>
+                  <p className="skill-description">{skill.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Download from URL */}
+          <div className="skills-section">
+            <h4 className="skills-title">Install from URL</h4>
+            <div className="download-row">
+              <input
+                type="text"
+                value={downloadUrl}
+                onChange={(e) => setDownloadUrl(e.target.value)}
+                placeholder="https://example.com/my-skill.tar.gz"
+                className="form-input"
+                disabled={downloading}
+              />
+              <button className="btn-small btn-primary" onClick={handleDownloadSkill} disabled={downloading || !downloadUrl.trim()}>
+                {downloading ? "..." : "Download"}
+              </button>
+            </div>
+          </div>
         </div>
         <div className="modal-footer">
-          {!isNew && (
-            <button className="btn-danger" onClick={handleDelete}>Delete</button>
-          )}
+          {!isNew && <button className="btn-danger" onClick={handleDelete}>Delete</button>}
           <div className="modal-footer-right">
             <button className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn-primary" onClick={handleSave}>
-              {isNew ? "Create" : "Save"}
-            </button>
+            <button className="btn-primary" onClick={handleSave}>{isNew ? "Create" : "Save"}</button>
           </div>
         </div>
       </div>

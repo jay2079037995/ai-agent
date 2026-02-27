@@ -1,0 +1,31 @@
+{
+  "name": "basic-tools",
+  "displayName": "Basic Tools",
+  "description": "Basic utility tools: current time, JavaScript evaluation, URL opener, app launcher",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {},
+  "tools": [
+    {
+      "name": "get_current_time",
+      "description": "Returns the current date and time of the user's computer.",
+      "args": {}
+    },
+    {
+      "name": "run_javascript",
+      "description": "Evaluates a JavaScript expression and returns the result. Good for calculations.",
+      "args": { "code": "string" }
+    },
+    {
+      "name": "open_url",
+      "description": "Opens a URL in the user's default browser. Use for \"open browser\", \"open website\", etc.",
+      "args": { "url": "string" }
+    },
+    {
+      "name": "open_application",
+      "description": "Opens an application on macOS by name. Use for \"open Finder\", \"open Terminal\", etc.",
+      "args": { "name": "string" }
+    }
+  ],
+  "dependencies": []
+}

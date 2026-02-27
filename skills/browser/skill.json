@@ -1,0 +1,18 @@
+{
+  "name": "browser",
+  "displayName": "Browser Automation",
+  "description": "Control Chrome browser automatically: navigate, click, type, scroll, screenshot",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {
+    "chromePath": { "type": "string", "default": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "label": "Chrome executable path" }
+  },
+  "tools": [
+    {
+      "name": "browser_action",
+      "description": "Controls Chrome browser automatically. Actions: navigate(url), click(index), type(index, text), key_press(key), scroll(direction), read(), wait_for_page_change(timeout, interval), screenshot(), back(), close(). After each action, returns updated list of interactive elements with index numbers.",
+      "args": { "action": "string", "url": "string", "index": "number", "text": "string", "key": "string", "direction": "string", "timeout": "number", "interval": "number" }
+    }
+  ],
+  "dependencies": []
+}

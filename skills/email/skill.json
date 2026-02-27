@@ -1,0 +1,24 @@
+{
+  "name": "email",
+  "displayName": "Email (Gmail)",
+  "description": "Read and send emails via Gmail using IMAP/SMTP",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {
+    "gmailUser": { "type": "string", "default": "", "label": "Gmail address" },
+    "gmailAppPassword": { "type": "password", "default": "", "label": "Gmail app password" }
+  },
+  "tools": [
+    {
+      "name": "read_emails",
+      "description": "Reads the latest emails from Gmail inbox. count defaults to 5. Returns sender, subject, date, and preview text.",
+      "args": { "count": "number" }
+    },
+    {
+      "name": "send_email",
+      "description": "Sends an email via Gmail. Call with \"to\" and \"subject\" first, then provide email body separately.",
+      "args": { "to": "string", "subject": "string" }
+    }
+  ],
+  "dependencies": []
+}

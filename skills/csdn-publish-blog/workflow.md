@@ -1,11 +1,3 @@
-# CSDN 发表博客
-
-## Meta
-- match: csdn, 博客, blog, 发表, 发布文章, 写文章
-- description: 在 CSDN 上发表博客文章，自动处理登录和编辑流程
-
-## Steps
-
 ### Step 1: 打开 CSDN
 调用 browser_action navigate 到 https://www.csdn.net/
 

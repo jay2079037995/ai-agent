@@ -1,0 +1,11 @@
+{
+  "name": "baidu-search",
+  "displayName": "百度搜索",
+  "description": "在百度搜索引擎中搜索内容",
+  "version": "1.0.0",
+  "type": "workflow",
+  "configSchema": {},
+  "tools": [],
+  "dependencies": ["browser"],
+  "matchKeywords": ["百度", "baidu", "搜索", "search", "在百度"]
+}

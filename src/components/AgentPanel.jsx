@@ -1,12 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useAgents } from "../AgentContext";
 
-const MODES = [
-  { id: "agent", label: "agent", icon: "\u26A1", placeholder: "ask ai to do something..." },
-  { id: "shell", label: "shell", icon: ">_", placeholder: "enter shell command..." },
-  { id: "search", label: "search", icon: "\uD83D\uDD0D", placeholder: "search the web..." },
-];
-
 export default function AgentPanel({ agentId, onEditAgent }) {
   const { state, dispatch } = useAgents();
   const agent = state.agents[agentId];
@@ -14,19 +8,36 @@ export default function AgentPanel({ agentId, onEditAgent }) {
   const { history, mode, running } = tabState;
 
   const [command, setCommand] = useState("");
-  const [tgRunning, setTgRunning] = useState(false);
-  const [tgHasToken, setTgHasToken] = useState(false);
+  const [serviceStatuses, setServiceStatuses] = useState({});
   const outputRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Load telegram status
+  // Build mode tabs dynamically from installed skills
+  const modes = [{ id: "agent", label: "agent", icon: "\u26A1", placeholder: "ask ai to do something..." }];
+  const skills = agent?.skills || {};
+  if (skills["shell"]?.installed) {
+    modes.push({ id: "shell", label: "shell", icon: ">_", placeholder: "enter shell command..." });
+  }
+
+  // Check service skill statuses (e.g. telegram)
   useEffect(() => {
-    if (!window.electronAPI || !agentId) return;
-    window.electronAPI.agentTelegramStatus(agentId).then((s) => {
-      setTgRunning(s.running);
-      setTgHasToken(s.hasToken);
-    });
-  }, [agentId]);
+    if (!window.electronAPI || !agentId || !agent) return;
+    const installedSkills = Object.entries(agent.skills || {}).filter(([name, data]) => data.installed);
+
+    const checkStatuses = async () => {
+      const statuses = {};
+      for (const [name] of installedSkills) {
+        try {
+          const status = await window.electronAPI.skillServiceStatus(agentId, name);
+          if (!status.error && status.running !== undefined) {
+            statuses[name] = status;
+          }
+        } catch (_) {}
+      }
+      setServiceStatuses(statuses);
+    };
+    checkStatuses();
+  }, [agentId, agent?.skills]);
 
   // Auto-scroll
   useEffect(() => {
@@ -75,18 +86,22 @@ export default function AgentPanel({ agentId, onEditAgent }) {
 
   if (!agent) return <div className="agent-panel-empty">No agent selected</div>;
 
-  const currentMode = MODES.find((m) => m.id === mode);
+  const currentMode = modes.find((m) => m.id === mode) || modes[0];
 
-  const handleTelegramToggle = async () => {
+  const handleServiceToggle = async (skillName) => {
     if (!window.electronAPI) return;
-    const result = await window.electronAPI.agentTelegramToggle(agentId);
-    setTgRunning(result.running);
+    const result = await window.electronAPI.skillServiceToggle(agentId, skillName);
+    setServiceStatuses((prev) => ({
+      ...prev,
+      [skillName]: { ...prev[skillName], running: result.running },
+    }));
     if (result.error) {
-      dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "error", text: `Telegram: ${result.error}` } } });
+      dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "error", text: `${skillName}: ${result.error}` } } });
     } else {
+      const label = result.running ? "已启动" : "已停止";
       dispatch({
         type: "PUSH_HISTORY",
-        payload: { agentId, entry: { type: "ai", text: result.running ? "Telegram Bot \u5DF2\u542F\u52A8" : "Telegram Bot \u5DF2\u505C\u6B62" } },
+        payload: { agentId, entry: { type: "ai", text: `${skillName} ${label}` } },
       });
     }
   };
@@ -120,20 +135,7 @@ export default function AgentPanel({ agentId, onEditAgent }) {
 
     if (!window.electronAPI) {
       dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "error", text: "[Not running in Electron]" } } });
-    } else if (mode === "agent") {
-      const result = await window.electronAPI.agentChat(agentId, cmd);
-      if (result.error) {
-        dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "error", text: result.error } } });
-      } else {
-        dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "ai", text: result.output } } });
-      }
-    } else if (mode === "search") {
-      const result = await window.electronAPI.braveSearch(cmd);
-      dispatch({
-        type: "PUSH_HISTORY",
-        payload: { agentId, entry: { type: result.error ? "error" : "ai", text: result.error || result.output } },
-      });
-    } else {
+    } else if (mode === "shell") {
       // Shell mode
       const result = await window.electronAPI.agentExecCommand(agentId, cmd);
       const output = (result.stdout + result.stderr).trim();
@@ -143,6 +145,14 @@ export default function AgentPanel({ agentId, onEditAgent }) {
           payload: { agentId, entry: { type: result.code === 0 ? "output" : "error", text: output } },
         });
       }
+    } else {
+      // Agent mode (default)
+      const result = await window.electronAPI.agentChat(agentId, cmd);
+      if (result.error) {
+        dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "error", text: result.error } } });
+      } else {
+        dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "ai", text: result.output } } });
+      }
     }
 
     dispatch({ type: "SET_RUNNING", payload: { agentId, running: false } });
@@ -151,13 +161,17 @@ export default function AgentPanel({ agentId, onEditAgent }) {
 
   const providerLabel = `${agent.provider.type} — ${agent.provider.model}`;
 
+  // Find service skills that have toggle buttons
+  const serviceSkills = Object.entries(agent.skills || {})
+    .filter(([name, data]) => data.installed && serviceStatuses[name] !== undefined);
+
   return (
     <div className="agent-panel">
       <div className="terminal-header">
         <div className="header-left">
           <span className="terminal-title">{agent.name}</span>
           <div className="mode-tabs">
-            {MODES.map((m) => (
+            {modes.map((m) => (
               <button
                 key={m.id}
                 className={`mode-tab ${mode === m.id ? "active" : ""}`}
@@ -175,15 +189,20 @@ export default function AgentPanel({ agentId, onEditAgent }) {
         </div>
         <div className="header-right">
           <span className="provider-badge">{providerLabel}</span>
-          <button
-            className={`tg-toggle ${tgRunning ? "active" : ""}`}
-            onClick={handleTelegramToggle}
-            title={tgRunning ? "Telegram Bot \u8FD0\u884C\u4E2D (\u70B9\u51FB\u505C\u6B62)" : tgHasToken ? "\u70B9\u51FB\u542F\u52A8 Telegram Bot" : "\u672A\u914D\u7F6E Bot Token"}
-            disabled={!tgHasToken}
-          >
-            <span className={`tg-dot ${tgRunning ? "on" : ""}`} />
-            TG
-          </button>
+          {serviceSkills.map(([skillName, skillData]) => {
+            const status = serviceStatuses[skillName] || {};
+            return (
+              <button
+                key={skillName}
+                className={`tg-toggle ${status.running ? "active" : ""}`}
+                onClick={() => handleServiceToggle(skillName)}
+                title={status.running ? `${skillName} running (click to stop)` : `Start ${skillName}`}
+              >
+                <span className={`tg-dot ${status.running ? "on" : ""}`} />
+                {skillName === "telegram" ? "TG" : skillName}
+              </button>
+            );
+          })}
           <button className="header-btn" onClick={onEditAgent} title="Settings">
             <span style={{ fontSize: 14 }}>{"⚙"}</span> Edit
           </button>
