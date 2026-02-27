@@ -8,7 +8,7 @@ const { chatWithProvider } = require("./providers");
 const { getAgentSkills } = require("./store");
 const { getSkillManifest, loadSkillCode, loadWorkflow } = require("./skill-registry");
 
-const AGENT_MAX_ITERATIONS = 15;
+const DEFAULT_MAX_ITERATIONS = 30;
 
 // --- Dynamic system prompt building ---
 
@@ -294,7 +294,8 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
   let pendingWebpageTitle = null;
   let pendingEmail = null;
 
-  for (let i = 0; i < AGENT_MAX_ITERATIONS; i++) {
+  const maxIter = agentConfig.maxIterations || DEFAULT_MAX_ITERATIONS;
+  for (let i = 0; i < maxIter; i++) {
     sendProgress(win, agentId, "iteration", { step: i + 1 });
     const content = await chatWithProvider(messages, providerConfig);
     const toolCall = parseToolCall(content);

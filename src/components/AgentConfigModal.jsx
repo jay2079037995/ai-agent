@@ -23,6 +23,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
   const [model, setModel] = useState("");
   const [endpoint, setEndpoint] = useState("");
   const [workDir, setWorkDir] = useState("");
+  const [maxIterations, setMaxIterations] = useState(30);
 
   // Skill management
   const [availableSkills, setAvailableSkills] = useState([]);
@@ -50,6 +51,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
       setModel(agent.provider.model);
       setEndpoint(agent.provider.endpoint);
       setWorkDir(agent.workDir || "");
+      setMaxIterations(agent.maxIterations || 30);
       setAgentSkills(agent.skills || {});
       const configs = {};
       for (const [skillName, skillData] of Object.entries(agent.skills || {})) {
@@ -63,6 +65,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
       setModel(DEFAULTS.minimax.model);
       setEndpoint(DEFAULTS.minimax.endpoint);
       setWorkDir("");
+      setMaxIterations(30);
       setAgentSkills({ "basic-tools": { installed: true, config: {} } });
       setSkillConfigs({});
     }
@@ -134,6 +137,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
         model,
         endpoint,
         workDir,
+        maxIterations,
         skills: agentSkills,
       });
       dispatch({ type: "ADD_AGENT", payload: agent });
@@ -142,6 +146,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
         name,
         provider: { type: providerType, apiKey, model, endpoint },
         skills: agentSkills,
+        maxIterations,
         workDir,
       };
       const updated = await window.electronAPI.updateAgent(agentId, updates);
@@ -218,6 +223,11 @@ export default function AgentConfigModal({ agentId, onClose }) {
           <label className="form-label">
             Working Directory
             <input type="text" value={workDir} onChange={(e) => setWorkDir(e.target.value)} placeholder="~/Documents" className="form-input" />
+          </label>
+
+          <label className="form-label">
+            Max Steps
+            <input type="number" value={maxIterations} onChange={(e) => setMaxIterations(Math.max(1, parseInt(e.target.value) || 30))} min="1" max="100" className="form-input" />
           </label>
 
           <div className="form-divider" />

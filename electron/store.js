@@ -33,6 +33,7 @@ function createAgent(config = {}) {
     skills: config.skills || {
       "basic-tools": { installed: true, config: {} },
     },
+    maxIterations: config.maxIterations || 30,
     workDir: config.workDir || process.env.HOME || "",
     createdAt: now,
     updatedAt: now,
