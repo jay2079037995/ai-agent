@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "pencil": {
+      "command": "/Users/xiaoxx/.vscode/extensions/highagency.pencildev-0.6.28/out/mcp-server-darwin-arm64",
+      "args": ["--app", "visual_studio_code"],
+      "env": {},
+      "type": "stdio"
+    }
+  }
+}

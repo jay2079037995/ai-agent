@@ -1,0 +1,65 @@
+{
+  "name": "pack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pack desktop app",
+  "author": "Pack",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "webpack serve --mode development --open",
+    "build": "webpack --mode production",
+    "electron:dev": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.pack.app",
+    "productName": "Pack",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "package.json",
+      {
+        "from": "dist",
+        "to": "dist"
+      },
+      {
+        "from": "electron",
+        "to": "electron"
+      },
+      {
+        "from": "skills",
+        "to": "skills"
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    }
+  },
+  "dependencies": {
+    "imap": "^0.8.19",
+    "mailparser": "^3.9.3",
+    "node-telegram-bot-api": "^0.67.0",
+    "nodemailer": "^8.0.1",
+    "puppeteer-core": "^24.37.5",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "@babel/preset-react": "^7.28.5",
+    "babel-loader": "^10.0.0",
+    "css-loader": "^7.1.4",
+    "electron": "^40.6.1",
+    "electron-builder": "^26.8.1",
+    "html-webpack-plugin": "^5.6.6",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.105.2",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.3"
+  }
+}
