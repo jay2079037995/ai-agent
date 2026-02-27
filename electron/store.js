@@ -2,8 +2,34 @@ const ElectronStore = require("electron-store");
 const Store = ElectronStore.default || ElectronStore;
 const { v4: uuidv4 } = require("uuid");
 
+// --- Predefined roles ---
+
+const ROLES = {
+  general: { label: "通用", prompt: "" },
+  pm: {
+    label: "项目经理",
+    prompt: `你的角色是【项目经理】。你的职责是：管理项目、拆分需求为子任务、将任务派发给合适角色的 agent、跟踪项目进度、协调团队成员之间的沟通。
+当有人问你"你是谁"或"你是做什么的"时，你应该回答你是项目经理，负责项目管理、任务拆分与派发、进度跟踪。
+工作流程：1) 收到新需求时，先用 list_agents 查看团队中有哪些 agent 及其角色 2) 分析需求并拆分为子任务 3) 使用 create_task 创建任务并通过 assignedRole 分配给对应角色 4) 使用 list_tasks 跟踪任务进度 5) 需要沟通时使用 send_message_to_agent 联系对应 agent。`,
+  },
+  developer: {
+    label: "程序员",
+    prompt: `你的角色是【程序员】。你的职责是：编写代码、实现功能、修复 bug、进行代码优化。
+当有人问你"你是谁"或"你是做什么的"时，你应该回答你是程序员，负责编写代码、实现功能和修复 bug。
+工作流程：1) 收到任务后分析需求 2) 使用工具编写和执行代码 3) 完成后使用 update_task 将任务状态更新为 done 4) 如发现问题或需要协调，使用 send_message_to_agent 反馈给项目经理或测试员。`,
+  },
+  tester: {
+    label: "测试员",
+    prompt: `你的角色是【测试员】。你的职责是：测试软件功能、发现并报告 bug、验证 bug 修复、确保软件质量。
+当有人问你"你是谁"或"你是做什么的"时，你应该回答你是测试员，负责测试软件、发现 bug 和确保软件质量。
+工作流程：1) 收到测试任务后，根据任务描述测试功能 2) 如发现 bug，使用 send_message_to_agent 通知程序员并使用 create_task 创建 bug 修复任务 3) 验证修复后使用 update_task 标记任务为 done。`,
+  },
+};
+
 const schema = {
   agents: { type: "object", default: {} },
+  tasks: { type: "object", default: {} },
+  agentMessages: { type: "object", default: {} },
   uiState: {
     type: "object",
     properties: {
@@ -24,6 +50,7 @@ function createAgent(config = {}) {
   const agent = {
     id,
     name: config.name || "New Agent",
+    role: config.role || "general",
     provider: {
       type: config.providerType || "minimax",
       apiKey: config.apiKey || "",
@@ -153,6 +180,75 @@ function setUIState(state) {
   store.set("uiState", { ...current, ...state });
 }
 
+// --- Task CRUD ---
+
+function createTask(taskData = {}) {
+  const id = uuidv4();
+  const now = Date.now();
+  const task = {
+    id,
+    title: taskData.title || "Untitled Task",
+    description: taskData.description || "",
+    status: taskData.status || "backlog",
+    priority: taskData.priority || "medium",
+    assignedRole: taskData.assignedRole || "general",
+    assignedAgentId: taskData.assignedAgentId || null,
+    createdBy: taskData.createdBy || null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const tasks = store.get("tasks", {});
+  tasks[id] = task;
+  store.set("tasks", tasks);
+  return task;
+}
+
+function getTask(taskId) {
+  const tasks = store.get("tasks", {});
+  return tasks[taskId] || null;
+}
+
+function getAllTasks() {
+  return store.get("tasks", {});
+}
+
+function updateTask(taskId, updates) {
+  const tasks = store.get("tasks", {});
+  if (!tasks[taskId]) return null;
+  Object.assign(tasks[taskId], updates, { updatedAt: Date.now() });
+  store.set("tasks", tasks);
+  return tasks[taskId];
+}
+
+function deleteTask(taskId) {
+  const tasks = store.get("tasks", {});
+  delete tasks[taskId];
+  store.set("tasks", tasks);
+}
+
+// --- Agent Messages ---
+
+function pushAgentMessage(targetAgentId, senderAgentId, message) {
+  const allMessages = store.get("agentMessages", {});
+  if (!allMessages[targetAgentId]) allMessages[targetAgentId] = [];
+  allMessages[targetAgentId].push({
+    from: senderAgentId,
+    message,
+    timestamp: Date.now(),
+  });
+  store.set("agentMessages", allMessages);
+}
+
+function popAgentMessages(agentId) {
+  const allMessages = store.get("agentMessages", {});
+  const messages = allMessages[agentId] || [];
+  if (messages.length > 0) {
+    allMessages[agentId] = [];
+    store.set("agentMessages", allMessages);
+  }
+  return messages;
+}
+
 // --- Defaults ---
 
 function getDefaultModel(providerType) {
@@ -205,6 +301,12 @@ function migrateIfNeeded() {
   for (const id of Object.keys(agents)) {
     const agent = agents[id];
 
+    // Add role field if missing
+    if (!agent.role) {
+      agent.role = "general";
+      changed = true;
+    }
+
     // If agent already has skills, skip
     if (agent.skills) continue;
 
@@ -250,6 +352,7 @@ function migrateIfNeeded() {
 
 module.exports = {
   store,
+  ROLES,
   createAgent,
   getAgent,
   getAllAgents,
@@ -259,6 +362,13 @@ module.exports = {
   uninstallSkill,
   updateSkillConfig,
   getAgentSkills,
+  createTask,
+  getTask,
+  getAllTasks,
+  updateTask,
+  deleteTask,
+  pushAgentMessage,
+  popAgentMessages,
   getUIState,
   setUIState,
   getDefaultModel,

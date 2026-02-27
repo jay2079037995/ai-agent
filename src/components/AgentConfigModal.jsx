@@ -13,11 +13,19 @@ const DEFAULTS = {
   ollama: { model: "gemma3:4b", endpoint: "http://127.0.0.1:11434" },
 };
 
+const ROLE_TYPES = [
+  { value: "general", label: "通用" },
+  { value: "pm", label: "项目经理" },
+  { value: "developer", label: "程序员" },
+  { value: "tester", label: "测试员" },
+];
+
 export default function AgentConfigModal({ agentId, onClose }) {
   const { state, dispatch } = useAgents();
   const isNew = !agentId;
 
   const [name, setName] = useState("");
+  const [role, setRole] = useState("general");
   const [providerType, setProviderType] = useState("minimax");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
@@ -46,6 +54,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
     if (agentId && state.agents[agentId]) {
       const agent = state.agents[agentId];
       setName(agent.name);
+      setRole(agent.role || "general");
       setProviderType(agent.provider.type);
       setApiKey(agent.provider.apiKey);
       setModel(agent.provider.model);
@@ -60,6 +69,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
       setSkillConfigs(configs);
     } else {
       setName("");
+      setRole("general");
       setProviderType("minimax");
       setApiKey("");
       setModel(DEFAULTS.minimax.model);
@@ -132,6 +142,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
     if (isNew) {
       const agent = await window.electronAPI.createAgent({
         name: name || "New Agent",
+        role,
         providerType,
         apiKey,
         model,
@@ -144,6 +155,7 @@ export default function AgentConfigModal({ agentId, onClose }) {
     } else {
       const updates = {
         name,
+        role,
         provider: { type: providerType, apiKey, model, endpoint },
         skills: agentSkills,
         maxIterations,
@@ -192,6 +204,15 @@ export default function AgentConfigModal({ agentId, onClose }) {
           <label className="form-label">
             Name
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Agent name" className="form-input" />
+          </label>
+
+          <label className="form-label">
+            Role
+            <select value={role} onChange={(e) => setRole(e.target.value)} className="form-select">
+              {ROLE_TYPES.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
           </label>
 
           <label className="form-label">

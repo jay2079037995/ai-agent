@@ -25,6 +25,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
   skillServiceStatus: (agentId, skillName) => ipcRenderer.invoke("skill:service-status", agentId, skillName),
   skillServiceToggle: (agentId, skillName) => ipcRenderer.invoke("skill:service-toggle", agentId, skillName),
 
+  // --- Task management ---
+  createTask: (data) => ipcRenderer.invoke("task:create", data),
+  getAllTasks: () => ipcRenderer.invoke("task:get-all"),
+  updateTask: (id, updates) => ipcRenderer.invoke("task:update", id, updates),
+  deleteTask: (id) => ipcRenderer.invoke("task:delete", id),
+  onTasksUpdated: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("tasks-updated", handler);
+    return () => ipcRenderer.removeListener("tasks-updated", handler);
+  },
+
   // --- UI state ---
   getUIState: () => ipcRenderer.invoke("ui:get-state"),
   setUIState: (state) => ipcRenderer.invoke("ui:set-state", state),

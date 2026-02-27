@@ -3,11 +3,13 @@ import { AgentProvider, useAgents } from "./AgentContext";
 import TabBar from "./components/TabBar";
 import AgentPanel from "./components/AgentPanel";
 import AgentConfigModal from "./components/AgentConfigModal";
+import KanbanBoard from "./components/KanbanBoard";
 import "./App.css";
 
 function AppInner() {
   const { state } = useAgents();
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+  const [viewMode, setViewMode] = useState("chat"); // "chat" | "kanban"
   const [modalAgent, setModalAgent] = useState(null); // null=new, agentId=edit
   const [showModal, setShowModal] = useState(false);
 
@@ -48,15 +50,26 @@ function AppInner() {
     <div className="terminal">
       <div className="top-bar">
         <TabBar onNewAgent={handleNewAgent} />
-        <button
-          className="theme-toggle"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          title={theme === "dark" ? "switch to light mode" : "switch to dark mode"}
-        >
-          {theme === "dark" ? "light" : "dark"}
-        </button>
+        <div className="top-bar-actions">
+          <button
+            className={`view-toggle ${viewMode === "kanban" ? "active" : ""}`}
+            onClick={() => setViewMode(viewMode === "chat" ? "kanban" : "chat")}
+            title={viewMode === "chat" ? "switch to kanban board" : "switch to chat"}
+          >
+            {viewMode === "chat" ? "Board" : "Chat"}
+          </button>
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "switch to light mode" : "switch to dark mode"}
+          >
+            {theme === "dark" ? "light" : "dark"}
+          </button>
+        </div>
       </div>
-      {state.activeTabId ? (
+      {viewMode === "kanban" ? (
+        <KanbanBoard />
+      ) : state.activeTabId ? (
         <AgentPanel agentId={state.activeTabId} onEditAgent={handleEditAgent} />
       ) : (
         <div className="agent-panel-empty">

@@ -2,7 +2,7 @@
  * All IPC handlers — registered once from main.js.
  */
 
-const { ipcMain } = require("electron");
+const { ipcMain, BrowserWindow } = require("electron");
 const { spawn } = require("child_process");
 const {
   createAgent,
@@ -14,6 +14,10 @@ const {
   uninstallSkill,
   updateSkillConfig,
   getAgentSkills,
+  createTask,
+  getAllTasks,
+  updateTask: updateTaskStore,
+  deleteTask: deleteTaskStore,
   getUIState,
   setUIState,
 } = require("./store");
@@ -170,6 +174,36 @@ function registerIpcHandlers() {
 
     const ok = await code.startService(agentId, skillConfig, deps);
     return { running: ok, error: ok ? null : "启动失败，请检查 token 是否有效" };
+  });
+
+  // --- Task management ---
+
+  ipcMain.handle("task:create", (event, taskData) => {
+    const task = createTask(taskData);
+    BrowserWindow.getAllWindows().forEach((w) => {
+      try { w.webContents.send("tasks-updated"); } catch (_) {}
+    });
+    return task;
+  });
+
+  ipcMain.handle("task:get-all", () => {
+    return getAllTasks();
+  });
+
+  ipcMain.handle("task:update", (event, taskId, updates) => {
+    const task = updateTaskStore(taskId, updates);
+    BrowserWindow.getAllWindows().forEach((w) => {
+      try { w.webContents.send("tasks-updated"); } catch (_) {}
+    });
+    return task;
+  });
+
+  ipcMain.handle("task:delete", (event, taskId) => {
+    deleteTaskStore(taskId);
+    BrowserWindow.getAllWindows().forEach((w) => {
+      try { w.webContents.send("tasks-updated"); } catch (_) {}
+    });
+    return true;
   });
 
   // --- UI state persistence ---

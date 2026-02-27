@@ -5,15 +5,22 @@
 
 const { BrowserWindow } = require("electron");
 const { chatWithProvider } = require("./providers");
-const { getAgentSkills } = require("./store");
+const { getAgentSkills, getAgent, ROLES } = require("./store");
 const { getSkillManifest, loadSkillCode, loadWorkflow } = require("./skill-registry");
+const collaboration = require("./collaboration");
 
 const DEFAULT_MAX_ITERATIONS = 30;
+
+// Set collaboration's agentLoop reference (deferred to avoid circular dep)
+setImmediate(() => collaboration.setAgentLoop(agentLoop));
 
 // --- Dynamic system prompt building ---
 
 function buildSystemPrompt(agentId) {
   const agentSkills = getAgentSkills(agentId);
+  const agent = getAgent(agentId);
+  const role = agent?.role || "general";
+  const roleConfig = ROLES[role];
   const toolDescriptions = [];
 
   for (const [skillName, skillData] of Object.entries(agentSkills)) {
@@ -29,8 +36,17 @@ function buildSystemPrompt(agentId) {
     }
   }
 
+  const agentName = agent?.name || "Assistant";
+  const roleIdentity = roleConfig && roleConfig.prompt
+    ? `\n\n=== 你的身份 ===\n你的名字是「${agentName}」。\n${roleConfig.prompt}\n=== 身份结束 ===\n`
+    : "";
+
+  // Add collaboration tools
+  const collabDescs = collaboration.getToolDescriptions();
+  toolDescriptions.push(...collabDescs);
+
   if (toolDescriptions.length === 0) {
-    return `You are a helpful AI assistant. Answer the user's questions directly. Always answer in the same language as the user's question.`;
+    return `You are a helpful AI assistant. Answer the user's questions directly. Always answer in the same language as the user's question.${roleIdentity}`;
   }
 
   return `You are a helpful AI assistant with access to the following tools:
@@ -47,7 +63,7 @@ Rules:
 6. When the user asks to "open a website", "go to a page", "search on Baidu/Google", "register an account", "log in", "fill a form", or any task that involves interacting with a webpage, you MUST use browser_action. Use web_search only when you need to look up information, NOT when the user wants you to operate a browser.
 7. When using browser_action, you MUST continue step by step. After navigate, read the elements list, then use click/type to interact with the page. Do NOT give up or say you cannot do it.
 8. If a page requires QR code scanning, SMS verification, CAPTCHA, or any manual user action, tell the user what to do, then use wait_for_page_change to poll until the page changes.
-
+${roleIdentity}
 `;
 }
 
@@ -71,6 +87,11 @@ function buildToolRouter(agentId) {
 }
 
 async function executeToolViaSkill(toolName, args, router, context) {
+  // Check collaboration tools first
+  if (collaboration.isCollaborationTool(toolName)) {
+    return await collaboration.executeCollaborationTool(toolName, args, context.agentId);
+  }
+
   const route = router[toolName];
   if (!route) return `Error: Unknown tool "${toolName}". This tool is not available with current skills.`;
 
@@ -240,7 +261,7 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
   const win = BrowserWindow.getAllWindows()[0] || null;
   const providerConfig = agentConfig.provider;
   const agentSkills = agentConfig.skills || {};
-  const toolContext = { workDir: agentConfig.workDir, agentSkills };
+  const toolContext = { workDir: agentConfig.workDir, agentSkills, agentId };
   const router = buildToolRouter(agentId);
 
   // Phase 1: Workflow matching
