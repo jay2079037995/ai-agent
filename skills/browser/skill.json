@@ -14,5 +14,10 @@
       "args": { "action": "string", "url": "string", "index": "number", "text": "string", "key": "string", "direction": "string", "timeout": "number", "interval": "number" }
     }
   ],
+  "promptRules": [
+    "When the user asks to \"open a website\", \"go to a page\", \"search on Baidu/Google\", \"register an account\", \"log in\", \"fill a form\", or any task that involves interacting with a webpage, you MUST use browser_action. Use web_search only when you need to look up information, NOT when the user wants you to operate a browser.",
+    "When using browser_action, you MUST continue step by step. After navigate, read the elements list, then use click/type to interact with the page. Do NOT give up or say you cannot do it.",
+    "If a page requires QR code scanning, SMS verification, CAPTCHA, or any manual user action, tell the user what to do, then use wait_for_page_change to poll until the page changes."
+  ],
   "dependencies": []
 }

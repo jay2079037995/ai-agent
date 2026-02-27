@@ -22,6 +22,7 @@ function buildSystemPrompt(agentId) {
   const role = agent?.role || "general";
   const roleConfig = ROLES[role];
   const toolDescriptions = [];
+  const skillRules = [];
 
   for (const [skillName, skillData] of Object.entries(agentSkills)) {
     if (!skillData.installed) continue;
@@ -33,6 +34,11 @@ function buildSystemPrompt(agentId) {
         const argList = Object.keys(tool.args || {}).join(", ");
         toolDescriptions.push(`- ${tool.name}(${argList}): ${tool.description}`);
       }
+    }
+
+    // Collect promptRules from installed skills
+    if (manifest.promptRules && manifest.promptRules.length > 0) {
+      skillRules.push(...manifest.promptRules);
     }
   }
 
@@ -49,20 +55,23 @@ function buildSystemPrompt(agentId) {
     return `You are a helpful AI assistant. Answer the user's questions directly. Always answer in the same language as the user's question.${roleIdentity}`;
   }
 
+  // Build numbered rules: base rules + skill-specific rules
+  const baseRules = [
+    "If you need real-time or local information, you MUST use a tool. Do NOT guess or make up answers.",
+    'To use a tool, respond with ONLY a single raw JSON object, nothing else:\n   {"tool_call":{"name":"tool_name","args":{"arg1":"value1"}}}',
+    "After receiving a tool result, decide if you need another tool or can answer.",
+    "When you have enough information, respond with a plain text answer (NOT JSON).",
+    "Always answer in the same language as the user's question.",
+  ];
+  const allRules = [...baseRules, ...skillRules];
+  const rulesText = allRules.map((r, i) => `${i + 1}. ${r}`).join("\n");
+
   return `You are a helpful AI assistant with access to the following tools:
 
 ${toolDescriptions.join("\n")}
 
 Rules:
-1. If you need real-time or local information, you MUST use a tool. Do NOT guess or make up answers.
-2. To use a tool, respond with ONLY a single raw JSON object, nothing else:
-   {"tool_call":{"name":"tool_name","args":{"arg1":"value1"}}}
-3. After receiving a tool result, decide if you need another tool or can answer.
-4. When you have enough information, respond with a plain text answer (NOT JSON).
-5. Always answer in the same language as the user's question.
-6. When the user asks to "open a website", "go to a page", "search on Baidu/Google", "register an account", "log in", "fill a form", or any task that involves interacting with a webpage, you MUST use browser_action. Use web_search only when you need to look up information, NOT when the user wants you to operate a browser.
-7. When using browser_action, you MUST continue step by step. After navigate, read the elements list, then use click/type to interact with the page. Do NOT give up or say you cannot do it.
-8. If a page requires QR code scanning, SMS verification, CAPTCHA, or any manual user action, tell the user what to do, then use wait_for_page_change to poll until the page changes.
+${rulesText}
 ${roleIdentity}
 `;
 }
