@@ -561,6 +561,100 @@ body {
   color: var(--text-muted);
 }
 
+/* === Attach Button === */
+
+.attach-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.attach-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* === Attachment Bar === */
+
+.attachment-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  max-width: 200px;
+}
+
+.attachment-chip:hover {
+  border-color: var(--border-secondary);
+}
+
+.attachment-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.attachment-file-icon {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-info);
+  background: var(--bg-surface);
+  padding: 4px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--border-primary);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.attachment-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.attachment-remove:hover {
+  color: var(--accent-error);
+}
+
 /* === Modal === */
 
 .modal-overlay {

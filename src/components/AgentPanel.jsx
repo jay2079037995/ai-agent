@@ -1,6 +1,20 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useAgents } from "../AgentContext";
 
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const TEXT_EXTS = [".txt", ".md", ".json", ".js", ".jsx", ".ts", ".tsx", ".py", ".css", ".html", ".yml", ".yaml", ".xml", ".csv", ".log", ".sh", ".toml", ".cfg", ".ini", ".env"];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_ATTACHMENTS = 5;
+
+function getFileCategory(file) {
+  if (IMAGE_TYPES.includes(file.type)) return "image";
+  const ext = (file.name || "").toLowerCase().match(/\.[^.]+$/)?.[0] || "";
+  if (TEXT_EXTS.includes(ext)) return "text";
+  if (file.type?.startsWith("image/")) return "image";
+  if (file.type?.startsWith("text/")) return "text";
+  return null;
+}
+
 export default function AgentPanel({ agentId, onEditAgent }) {
   const { state, dispatch } = useAgents();
   const agent = state.agents[agentId];
@@ -8,9 +22,11 @@ export default function AgentPanel({ agentId, onEditAgent }) {
   const { history, mode, running } = tabState;
 
   const [command, setCommand] = useState("");
+  const [attachments, setAttachments] = useState([]);
   const [serviceStatuses, setServiceStatuses] = useState({});
   const outputRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Build mode tabs dynamically from installed skills
   const modes = [{ id: "agent", label: "agent", icon: "\u26A1", placeholder: "ask ai to do something..." }];
@@ -90,9 +106,100 @@ export default function AgentPanel({ agentId, onEditAgent }) {
     return removeListener;
   }, [agentId, dispatch]);
 
+  // Paste image from clipboard
+  useEffect(() => {
+    function handlePaste(e) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) processFiles([file]);
+          break;
+        }
+      }
+    }
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [attachments]);
+
   if (!agent) return <div className="agent-panel-empty">No agent selected</div>;
 
   const currentMode = modes.find((m) => m.id === mode) || modes[0];
+
+  // --- Attachment handling ---
+
+  function processFiles(files) {
+    for (const file of files) {
+      if (attachments.length >= MAX_ATTACHMENTS) break;
+
+      const category = getFileCategory(file);
+      if (!category) {
+        dispatch({
+          type: "PUSH_HISTORY",
+          payload: { agentId, entry: { type: "error", text: `Unsupported file type: ${file.name}` } },
+        });
+        continue;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        dispatch({
+          type: "PUSH_HISTORY",
+          payload: { agentId, entry: { type: "error", text: `File too large (>10MB): ${file.name}` } },
+        });
+        continue;
+      }
+
+      const reader = new FileReader();
+      if (category === "image") {
+        reader.onload = () => {
+          const base64 = reader.result.split(",")[1];
+          setAttachments((prev) => [
+            ...prev,
+            { name: file.name, type: "image", mimeType: file.type || "image/png", data: base64, textContent: null, size: file.size },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        reader.onload = () => {
+          setAttachments((prev) => [
+            ...prev,
+            { name: file.name, type: "text", mimeType: file.type || "text/plain", data: null, textContent: reader.result, size: file.size },
+          ]);
+        };
+        reader.readAsText(file);
+      }
+    }
+  }
+
+  function handleAttachClick() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFileChange(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    processFiles(files);
+  }
+
+  function removeAttachment(index) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer?.files?.length > 0) {
+      processFiles(Array.from(e.dataTransfer.files));
+    }
+  }
+
+  // --- Service toggle ---
 
   const handleServiceToggle = async (skillName) => {
     if (!window.electronAPI) return;
@@ -104,7 +211,7 @@ export default function AgentPanel({ agentId, onEditAgent }) {
     if (result.error) {
       dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "error", text: `${skillName}: ${result.error}` } } });
     } else {
-      const label = result.running ? "已启动" : "已停止";
+      const label = result.running ? "\u5DF2\u542F\u52A8" : "\u5DF2\u505C\u6B62";
       dispatch({
         type: "PUSH_HISTORY",
         payload: { agentId, entry: { type: "ai", text: `${skillName} ${label}` } },
@@ -129,14 +236,20 @@ export default function AgentPanel({ agentId, onEditAgent }) {
     inputRef.current?.focus();
   };
 
+  // --- Submit ---
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const cmd = command.trim();
-    if (!cmd) return;
+    if (!cmd && attachments.length === 0) return;
 
     const prefix = currentMode ? currentMode.icon : "$";
-    dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "input", text: `${prefix} ${cmd}` } } });
+    const attachLabel = attachments.length > 0 ? ` [${attachments.map((a) => a.name).join(", ")}]` : "";
+    dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "input", text: `${prefix} ${cmd}${attachLabel}` } } });
+
+    const currentAttachments = [...attachments];
     setCommand("");
+    setAttachments([]);
     dispatch({ type: "SET_RUNNING", payload: { agentId, running: true } });
 
     if (!window.electronAPI) {
@@ -152,8 +265,8 @@ export default function AgentPanel({ agentId, onEditAgent }) {
         });
       }
     } else {
-      // Agent mode (default)
-      const result = await window.electronAPI.agentChat(agentId, cmd);
+      // Agent mode — pass attachments
+      const result = await window.electronAPI.agentChat(agentId, cmd, currentAttachments);
       if (result.error) {
         dispatch({ type: "PUSH_HISTORY", payload: { agentId, entry: { type: "error", text: result.error } } });
       } else {
@@ -172,7 +285,7 @@ export default function AgentPanel({ agentId, onEditAgent }) {
     .filter(([name, data]) => data.installed && serviceStatuses[name] !== undefined);
 
   return (
-    <div className="agent-panel">
+    <div className="agent-panel" onDragOver={handleDragOver} onDrop={handleDrop}>
       <div className="terminal-header">
         <div className="header-left">
           <span className="terminal-title">{agent.name}</span>
@@ -210,7 +323,7 @@ export default function AgentPanel({ agentId, onEditAgent }) {
             );
           })}
           <button className="header-btn" onClick={onEditAgent} title="Settings">
-            <span style={{ fontSize: 14 }}>{"⚙"}</span> Edit
+            <span style={{ fontSize: 14 }}>{"\u2699"}</span> Edit
           </button>
           <button className="header-btn" onClick={handleNewSession} disabled={running} title="New Session">
             New
@@ -237,7 +350,35 @@ export default function AgentPanel({ agentId, onEditAgent }) {
           </div>
         )}
       </div>
+      {attachments.length > 0 && (
+        <div className="attachment-bar">
+          {attachments.map((att, i) => (
+            <div key={i} className="attachment-chip">
+              {att.type === "image" ? (
+                <img src={`data:${att.mimeType};base64,${att.data}`} alt={att.name} className="attachment-thumb" />
+              ) : (
+                <span className="attachment-file-icon">TXT</span>
+              )}
+              <span className="attachment-name">{att.name}</span>
+              <button className="attachment-remove" onClick={() => removeAttachment(i)} title="Remove">
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <form className="terminal-input" onSubmit={handleSubmit}>
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: "none" }}
+          multiple
+          accept="image/png,image/jpeg,image/gif,image/webp,.txt,.md,.json,.js,.jsx,.ts,.tsx,.py,.css,.html,.yml,.yaml,.xml,.csv,.log,.sh,.toml,.cfg,.ini"
+          onChange={handleFileChange}
+        />
+        <button type="button" className="attach-btn" onClick={handleAttachClick} disabled={running} title="Attach files">
+          {"\uD83D\uDCCE"}
+        </button>
         <span className="prompt">{currentMode?.icon || "$"}</span>
         <input
           ref={inputRef}

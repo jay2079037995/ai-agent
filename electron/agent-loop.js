@@ -271,7 +271,7 @@ function sendProgress(win, agentId, type, data) {
 
 // --- Main agent loop ---
 
-async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
+async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId, attachments = []) {
   const win = BrowserWindow.getAllWindows()[0] || null;
   const providerConfig = agentConfig.provider;
   const agentSkills = agentConfig.skills || {};
@@ -320,7 +320,32 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
       messages.push({ role: msg.role, content: msg.content });
     }
   }
-  messages.push({ role: "user", content: systemContent });
+  // Process user attachments: text files → appended to content, images → images field
+  const imageAttachments = attachments.filter((a) => a.type === "image");
+  const textAttachments = attachments.filter((a) => a.type === "text");
+
+  let augmentedContent = systemContent;
+  if (textAttachments.length > 0) {
+    augmentedContent += "\n\n=== Attached Files ===\n";
+    for (const att of textAttachments) {
+      augmentedContent += `\n--- ${att.name} ---\n${att.textContent}\n`;
+    }
+    augmentedContent += "=== End Attached Files ===\n";
+  }
+
+  const userMessage = { role: "user", content: augmentedContent };
+  if (imageAttachments.length > 0) {
+    userMessage.images = imageAttachments.map((att) => ({
+      base64: att.data,
+      mediaType: att.mimeType,
+      fileName: att.name,
+    }));
+    for (const att of imageAttachments) {
+      const sizeKB = Math.round((att.data.length * 3) / 4 / 1024);
+      console.log(`[vision] User attached image: ${att.name} (${sizeKB} KB, ${att.mimeType})`);
+    }
+  }
+  messages.push(userMessage);
 
   const toolTrace = [];
   if (workflow) {
@@ -346,7 +371,15 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
       const hasImages = messages.some((m) => m.images && m.images.length > 0);
       if (hasImages) {
         console.log(`chatWithProvider failed with images, retrying text-only: ${err.message}`);
-        const textOnly = messages.map(({ images, ...rest }) => rest);
+        sendProgress(win, agentId, "phase", { message: "当前模型不支持图片识别，将以纯文本模式重试。如需图片分析，请更换支持 vision 的模型。" });
+        const textOnly = messages.map(({ images, ...rest }) => {
+          if (images && images.length > 0) {
+            const names = images.map((img, idx) => img.fileName || `image_${idx + 1}`);
+            const notice = `\n\n[注意：用户附加了 ${images.length} 张图片（${names.join("、")}），但当前模型不支持图片识别，无法查看图片内容。请告知用户需要使用支持 vision 的模型才能分析图片。]`;
+            return { ...rest, content: rest.content + notice };
+          }
+          return rest;
+        });
         ({ content, reasoning } = await chatWithProvider(textOnly, providerConfig));
       } else {
         throw err;
@@ -464,7 +497,7 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
           const base64 = data.toString("base64");
           const ext = path.extname(imgPath).toLowerCase();
           const mediaType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
-          userMsg.images.push({ base64, mediaType });
+          userMsg.images.push({ base64, mediaType, fileName: path.basename(imgPath) });
           const sizeKB = Math.round(data.length / 1024);
           console.log(`[vision] Attached image: ${imgPath} (${sizeKB} KB, ${mediaType})`);
         } catch (e) {

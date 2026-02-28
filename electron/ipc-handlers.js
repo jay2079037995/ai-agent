@@ -58,15 +58,20 @@ function registerIpcHandlers() {
 
   // --- Per-agent chat ---
 
-  ipcMain.handle("agent:chat", async (event, agentId, prompt) => {
+  ipcMain.handle("agent:chat", async (event, agentId, prompt, attachments = []) => {
     const agentConfig = getAgent(agentId);
     if (!agentConfig) return { error: `Agent not found: ${agentId}` };
 
     try {
       const history = runtime.getHistory(agentId);
-      const result = await agentLoop(prompt, history, agentConfig, agentId);
+      const result = await agentLoop(prompt, history, agentConfig, agentId, attachments);
 
-      runtime.pushHistory(agentId, "user", prompt);
+      // Store prompt with text file contents in history (images too large to persist)
+      const textFiles = attachments.filter((a) => a.type === "text");
+      const storedPrompt = textFiles.length > 0
+        ? prompt + "\n\n" + textFiles.map((a) => `--- ${a.name} ---\n${a.textContent}`).join("\n\n")
+        : prompt;
+      runtime.pushHistory(agentId, "user", storedPrompt);
       runtime.pushHistory(agentId, "assistant", result.output || "");
 
       return result;

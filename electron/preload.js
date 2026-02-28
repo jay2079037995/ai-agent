@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   deleteAgent: (agentId) => ipcRenderer.invoke("agent:delete", agentId),
 
   // --- Per-agent operations ---
-  agentChat: (agentId, prompt) => ipcRenderer.invoke("agent:chat", agentId, prompt),
+  agentChat: (agentId, prompt, attachments) => ipcRenderer.invoke("agent:chat", agentId, prompt, attachments || []),
   agentClearSession: (agentId) => ipcRenderer.invoke("agent:clear-session", agentId),
   agentExecCommand: (agentId, command) => ipcRenderer.invoke("agent:exec-command", agentId, command),
 
