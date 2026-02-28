@@ -150,14 +150,15 @@ async function executeTool(toolName, args, context) {
 
 /**
  * Take a screenshot, run OCR, and return combined results.
+ * Returns { text, images } so agent-loop can attach the image for vision models.
  */
 function screenCapture() {
   const timestamp = Date.now();
-  const screenshotPath = `/tmp/screenshot-${timestamp}.png`;
+  const screenshotPath = `/tmp/screenshot-${timestamp}.jpg`;
 
-  // Take screenshot (silent, no sound)
+  // Take screenshot as JPEG (smaller file size for vision models), silent
   try {
-    execSync(`screencapture -x "${screenshotPath}"`, { timeout: 10_000 });
+    execSync(`screencapture -x -t jpg "${screenshotPath}"`, { timeout: 10_000 });
   } catch (err) {
     return `Error taking screenshot: ${err.message}`;
   }
@@ -192,7 +193,12 @@ function screenCapture() {
     ocrText: ocrText || "(no text detected)",
   };
 
-  return JSON.stringify(result, null, 2);
+  // Return object with images array — agent-loop will read the file
+  // and attach it to the LLM message for vision-capable models
+  return {
+    text: JSON.stringify(result, null, 2),
+    images: [{ path: screenshotPath }],
+  };
 }
 
 /**

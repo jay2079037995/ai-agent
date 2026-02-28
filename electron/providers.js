@@ -1,15 +1,70 @@
 /**
  * Unified LLM provider interface.
  * Supports: MiniMax (Anthropic Messages API), DeepSeek (OpenAI SDK), Ollama.
+ *
+ * Messages may include an optional `images` array for vision/multimodal:
+ *   { role: "user", content: "text", images: [{ base64: "...", mediaType: "image/png" }] }
+ * Each provider transforms this to its native format automatically.
  */
 
 const { net } = require("electron");
 const OpenAI = require("openai");
 
+// --- Image-aware message transformers ---
+
+/** Anthropic Messages format: content becomes array of text + image blocks */
+function toAnthropicMessages(messages) {
+  return messages.map((msg) => {
+    if (!msg.images || msg.images.length === 0) {
+      return { role: msg.role, content: msg.content };
+    }
+    const content = [{ type: "text", text: msg.content }];
+    for (const img of msg.images) {
+      content.push({
+        type: "image",
+        source: { type: "base64", media_type: img.mediaType, data: img.base64 },
+      });
+    }
+    return { role: msg.role, content };
+  });
+}
+
+/** OpenAI format: content becomes array of text + image_url blocks */
+function toOpenAIMessages(messages) {
+  return messages.map((msg) => {
+    if (!msg.images || msg.images.length === 0) {
+      return { role: msg.role, content: msg.content };
+    }
+    const content = [{ type: "text", text: msg.content }];
+    for (const img of msg.images) {
+      content.push({
+        type: "image_url",
+        image_url: { url: `data:${img.mediaType};base64,${img.base64}` },
+      });
+    }
+    return { role: msg.role, content };
+  });
+}
+
+/** Ollama format: images as separate base64 array */
+function toOllamaMessages(messages) {
+  return messages.map((msg) => {
+    if (!msg.images || msg.images.length === 0) {
+      return { role: msg.role, content: msg.content };
+    }
+    return {
+      role: msg.role,
+      content: msg.content,
+      images: msg.images.map((img) => img.base64),
+    };
+  });
+}
+
 // --- MiniMax (Anthropic Messages format) ---
 
 async function minimaxChat(messages, { endpoint, apiKey, model }) {
   const url = endpoint || "https://api.minimaxi.com/anthropic/v1/messages";
+  const prepared = toAnthropicMessages(messages);
   const response = await net.fetch(url, {
     method: "POST",
     headers: {
@@ -20,7 +75,7 @@ async function minimaxChat(messages, { endpoint, apiKey, model }) {
     body: JSON.stringify({
       model: model || "MiniMax-M2.5",
       max_tokens: 8192,
-      messages,
+      messages: prepared,
     }),
   });
   if (!response.ok) {
@@ -38,10 +93,11 @@ async function deepseekChat(messages, { endpoint, apiKey, model }) {
   const baseURL = endpoint || "https://api.deepseek.com";
   const client = new OpenAI({ baseURL, apiKey });
   const isReasoner = (model || "").includes("reasoner");
+  const prepared = toOpenAIMessages(messages);
 
   const params = {
     model: model || "deepseek-chat",
-    messages,
+    messages: prepared,
   };
   if (!isReasoner) {
     params.max_tokens = 8192;
@@ -59,12 +115,13 @@ async function deepseekChat(messages, { endpoint, apiKey, model }) {
 async function ollamaChat(messages, { endpoint, model }) {
   const base = endpoint || "http://127.0.0.1:11434";
   const url = `${base}/api/chat`;
+  const prepared = toOllamaMessages(messages);
   const response = await net.fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: model || "gemma3:4b",
-      messages,
+      messages: prepared,
       stream: false,
     }),
   });

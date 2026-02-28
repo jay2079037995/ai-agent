@@ -4,6 +4,8 @@
  */
 
 const { BrowserWindow } = require("electron");
+const fs = require("fs");
+const path = require("path");
 const { chatWithProvider } = require("./providers");
 const { getAgentSkills, getAgent, ROLES } = require("./store");
 const { getSkillManifest, loadSkillCode, loadWorkflow } = require("./skill-registry");
@@ -421,12 +423,41 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
       continue;
     }
 
-    sendProgress(win, agentId, "tool-result", { name, result: toolResult.slice(0, 300) });
+    // Tool result can be a string or an object { text, images: [{path}] }
+    let resultText = toolResult;
+    let resultImages = null;
+    if (typeof toolResult === "object" && toolResult !== null) {
+      resultText = toolResult.text || JSON.stringify(toolResult);
+      resultImages = toolResult.images || null;
+    }
+
+    sendProgress(win, agentId, "tool-result", { name, result: resultText.slice(0, 300) });
     messages.push({ role: "assistant", content });
-    messages.push({
+
+    const userMsg = {
       role: "user",
-      content: `Tool "${name}" returned:\n${toolResult}\n\nBased on this result, either use another tool or provide your final answer in plain text.`,
-    });
+      content: `Tool "${name}" returned:\n${resultText}\n\nBased on this result, either use another tool or provide your final answer in plain text.`,
+    };
+
+    // Attach images from tool result (e.g. screenshots) for vision-capable models
+    if (resultImages && resultImages.length > 0) {
+      userMsg.images = [];
+      for (const img of resultImages) {
+        const imgPath = img.path || img;
+        try {
+          const data = fs.readFileSync(imgPath);
+          const base64 = data.toString("base64");
+          const ext = path.extname(imgPath).toLowerCase();
+          const mediaType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+          userMsg.images.push({ base64, mediaType });
+        } catch (e) {
+          console.log(`screen-control: Failed to read image ${imgPath}: ${e.message}`);
+        }
+      }
+      if (userMsg.images.length === 0) delete userMsg.images;
+    }
+
+    messages.push(userMsg);
   }
 
   messages.push({ role: "user", content: "Please provide your final answer now based on all information gathered." });
