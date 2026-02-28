@@ -9,8 +9,12 @@ const PROVIDER_TYPES = [
 
 const DEFAULTS = {
   minimax: { model: "MiniMax-M2.5", endpoint: "https://api.minimaxi.com/anthropic/v1/messages" },
-  deepseek: { model: "deepseek-chat", endpoint: "https://api.deepseek.com/v1/chat/completions" },
+  deepseek: { model: "deepseek-chat", endpoint: "https://api.deepseek.com" },
   ollama: { model: "gemma3:4b", endpoint: "http://127.0.0.1:11434" },
+};
+
+const MODEL_OPTIONS = {
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
 };
 
 const ROLE_TYPES = [
@@ -233,7 +237,15 @@ export default function AgentConfigModal({ agentId, onClose }) {
 
           <label className="form-label">
             Model
-            <input type="text" value={model} onChange={(e) => setModel(e.target.value)} placeholder={DEFAULTS[providerType]?.model || "model name"} className="form-input" />
+            {MODEL_OPTIONS[providerType] ? (
+              <select value={model} onChange={(e) => setModel(e.target.value)} className="form-select">
+                {MODEL_OPTIONS[providerType].map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <input type="text" value={model} onChange={(e) => setModel(e.target.value)} placeholder={DEFAULTS[providerType]?.model || "model name"} className="form-input" />
+            )}
           </label>
 
           <label className="form-label">

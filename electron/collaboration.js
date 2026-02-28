@@ -38,7 +38,7 @@ const _cancelledAgents = new Set();
 const COLLABORATION_TOOLS = [
   {
     name: "send_message_to_agent",
-    description: "Send a message to another agent for collaboration. The target agent will process your message asynchronously.",
+    description: "Send a message to another agent and wait for their response. Use this to collaborate, delegate tasks, or ask questions to agents with different roles.",
     args: { agentId: "string", message: "string" },
   },
   {
@@ -332,25 +332,27 @@ async function executeCollaborationTool(toolName, args, callingAgentId) {
       const target = getAgent(args.agentId);
       if (!target) return `Error: Agent "${args.agentId}" not found.`;
 
-      // Store the message
+      // Store the message for logging
       pushAgentMessage(args.agentId, callingAgentId, args.message);
 
-      // Fire-and-forget: trigger the target agent to process the message asynchronously
+      // Synchronously trigger the target agent and wait for its response
       if (_agentLoop) {
         const sender = getAgent(callingAgentId);
         const senderName = sender?.name || callingAgentId;
         const prompt = `[Message from agent "${senderName}" (role: ${sender?.role || "general"})]: ${args.message}`;
 
-        setImmediate(async () => {
-          try {
-            await _agentLoop(prompt, [], target, args.agentId);
-          } catch (e) {
-            console.log(`Collaboration message to ${args.agentId} failed: ${e.message}`);
-          }
-        });
+        try {
+          console.log(`[Collab] "${senderName}" → "${target.name}": ${args.message.slice(0, 100)}`);
+          const result = await _agentLoop(prompt, [], target, args.agentId);
+          const output = result?.output || "(no response)";
+          console.log(`[Collab] "${target.name}" replied: ${output.slice(0, 100)}`);
+          return `Agent "${target.name}" responded:\n${output}`;
+        } catch (e) {
+          return `Agent "${target.name}" failed to process message: ${e.message}`;
+        }
       }
 
-      return `Message sent to agent "${target.name}" (${target.role || "general"}). They will process it asynchronously.`;
+      return `Error: Agent loop is not available.`;
     }
 
     default:

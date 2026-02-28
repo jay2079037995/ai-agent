@@ -76,6 +76,9 @@ export default function AgentPanel({ agentId, onEditAgent }) {
         case "tool-result":
           text = `\u2190 ${data.name}: ${data.result}`;
           break;
+        case "reasoning":
+          text = `\u{1F4AD} ${data.text}`;
+          break;
         default:
           text = `  ${JSON.stringify(data)}`;
       }

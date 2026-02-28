@@ -172,7 +172,7 @@ User task: ${userPrompt}
 Your answer:`;
 
   try {
-    const response = await chatWithProvider([{ role: "user", content: matchPrompt }], providerConfig);
+    const { content: response } = await chatWithProvider([{ role: "user", content: matchPrompt }], providerConfig);
     const answer = response.trim().toLowerCase();
     console.log(`AI workflow matching response: "${answer}"`);
 
@@ -334,7 +334,10 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
       return { output: "[任务已取消]", trace: toolTrace };
     }
     sendProgress(win, agentId, "iteration", { step: i + 1 });
-    const content = await chatWithProvider(messages, providerConfig);
+    const { content, reasoning } = await chatWithProvider(messages, providerConfig);
+    if (reasoning) {
+      sendProgress(win, agentId, "reasoning", { text: reasoning });
+    }
     const toolCall = parseToolCall(content);
 
     // Pending email body
@@ -427,7 +430,7 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
   }
 
   messages.push({ role: "user", content: "Please provide your final answer now based on all information gathered." });
-  const finalContent = await chatWithProvider(messages, providerConfig);
+  const { content: finalContent } = await chatWithProvider(messages, providerConfig);
   return { output: finalContent, trace: toolTrace };
 }
 

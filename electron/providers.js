@@ -1,9 +1,10 @@
 /**
  * Unified LLM provider interface.
- * Supports: MiniMax (Anthropic Messages API), DeepSeek (OpenAI-compatible), Ollama.
+ * Supports: MiniMax (Anthropic Messages API), DeepSeek (OpenAI SDK), Ollama.
  */
 
 const { net } = require("electron");
+const OpenAI = require("openai");
 
 // --- MiniMax (Anthropic Messages format) ---
 
@@ -28,31 +29,29 @@ async function minimaxChat(messages, { endpoint, apiKey, model }) {
   }
   const data = await response.json();
   const textBlock = (data.content || []).find((b) => b.type === "text");
-  return textBlock?.text || "";
+  return { content: textBlock?.text || "", reasoning: null };
 }
 
-// --- DeepSeek (OpenAI-compatible) ---
+// --- DeepSeek (OpenAI SDK) ---
 
 async function deepseekChat(messages, { endpoint, apiKey, model }) {
-  const url = endpoint || "https://api.deepseek.com/v1/chat/completions";
-  const response = await net.fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: model || "deepseek-chat",
-      messages,
-      max_tokens: 8192,
-    }),
-  });
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    throw new Error(`DeepSeek error: ${response.status} ${errText}`);
+  const baseURL = endpoint || "https://api.deepseek.com";
+  const client = new OpenAI({ baseURL, apiKey });
+  const isReasoner = (model || "").includes("reasoner");
+
+  const params = {
+    model: model || "deepseek-chat",
+    messages,
+  };
+  if (!isReasoner) {
+    params.max_tokens = 8192;
   }
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || "";
+
+  const completion = await client.chat.completions.create(params);
+  const msg = completion.choices?.[0]?.message || {};
+  const content = msg.content || "";
+  const reasoning = msg.reasoning_content || null;
+  return { content, reasoning };
 }
 
 // --- Ollama ---
@@ -73,7 +72,7 @@ async function ollamaChat(messages, { endpoint, model }) {
     throw new Error(`Ollama chat error: ${response.status}`);
   }
   const data = await response.json();
-  return data.message?.content || "";
+  return { content: data.message?.content || "", reasoning: null };
 }
 
 async function ollamaGenerate(prompt, { endpoint, model } = {}) {
@@ -97,6 +96,10 @@ async function ollamaGenerate(prompt, { endpoint, model } = {}) {
 
 // --- Unified entry point ---
 
+/**
+ * Unified chat entry point.
+ * Returns { content: string, reasoning: string | null }.
+ */
 async function chatWithProvider(messages, providerConfig) {
   const { type, apiKey, model, endpoint } = providerConfig;
   switch (type) {

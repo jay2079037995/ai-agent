@@ -271,7 +271,7 @@ function getDefaultModel(providerType) {
 function getDefaultEndpoint(providerType) {
   switch (providerType) {
     case "minimax": return "https://api.minimaxi.com/anthropic/v1/messages";
-    case "deepseek": return "https://api.deepseek.com/v1/chat/completions";
+    case "deepseek": return "https://api.deepseek.com";
     case "ollama": return "http://127.0.0.1:11434";
     default: return "";
   }
