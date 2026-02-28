@@ -1,0 +1,43 @@
+{
+  "name": "wecom",
+  "displayName": "企业微信群机器人",
+  "description": "通过 Webhook 向企业微信群发送消息（文本、Markdown、图文卡片）",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {
+    "webhookUrl": {
+      "type": "password",
+      "default": "",
+      "label": "Webhook URL (从企业微信群机器人设置中获取)"
+    }
+  },
+  "tools": [
+    {
+      "name": "wecom_send_text",
+      "description": "Send a text message to a WeCom group chat. Supports @mentioning members by userId or mobile number.",
+      "args": {
+        "content": "string — message text",
+        "mentioned_list": "string[] (optional) — list of userIds to @mention, use [\"@all\"] to mention everyone",
+        "mentioned_mobile_list": "string[] (optional) — list of mobile numbers to @mention"
+      }
+    },
+    {
+      "name": "wecom_send_markdown",
+      "description": "Send a Markdown-formatted message to a WeCom group chat. Supports bold, links, quotes, colored text etc.",
+      "args": {
+        "content": "string — markdown content"
+      }
+    },
+    {
+      "name": "wecom_send_news",
+      "description": "Send a news/card message with title, description, link and optional image to a WeCom group chat.",
+      "args": {
+        "title": "string — card title",
+        "description": "string (optional) — card description",
+        "url": "string — link URL when card is clicked",
+        "picurl": "string (optional) — image URL for the card"
+      }
+    }
+  ],
+  "dependencies": []
+}
