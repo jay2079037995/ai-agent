@@ -1,0 +1,60 @@
+{
+  "name": "screen-control",
+  "displayName": "屏幕控制",
+  "description": "桌面自动化：截图+OCR识别屏幕内容、移动/点击鼠标、输入文字、滚动。仅支持 macOS。",
+  "version": "1.0.0",
+  "type": "tool-provider",
+  "configSchema": {},
+  "tools": [
+    {
+      "name": "screen_capture",
+      "description": "Take a screenshot and OCR-recognize all text on screen. Returns the screenshot file path, screen dimensions, mouse position, and all recognized text content. Use this to 'see' the current screen.",
+      "args": {}
+    },
+    {
+      "name": "screen_info",
+      "description": "Get current screen dimensions and mouse cursor position without taking a screenshot.",
+      "args": {}
+    },
+    {
+      "name": "mouse_move",
+      "description": "Move the mouse cursor to the specified screen coordinates.",
+      "args": { "x": "number", "y": "number" }
+    },
+    {
+      "name": "mouse_click",
+      "description": "Click at the specified screen coordinates. Supports left click, right click, and double click.",
+      "args": {
+        "x": "number",
+        "y": "number",
+        "button": "string (optional: 'left' (default), 'right', or 'double')"
+      }
+    },
+    {
+      "name": "mouse_drag",
+      "description": "Drag from one position to another (left mouse button held down).",
+      "args": {
+        "fromX": "number",
+        "fromY": "number",
+        "toX": "number",
+        "toY": "number"
+      }
+    },
+    {
+      "name": "keyboard_type",
+      "description": "Type text at the current cursor position. Supports Unicode including Chinese characters.",
+      "args": { "text": "string" }
+    },
+    {
+      "name": "scroll",
+      "description": "Scroll at the specified screen position.",
+      "args": {
+        "x": "number",
+        "y": "number",
+        "direction": "string ('up', 'down', 'left', or 'right')",
+        "amount": "number (optional, scroll lines, default 3)"
+      }
+    }
+  ],
+  "dependencies": []
+}
