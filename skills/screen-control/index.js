@@ -167,6 +167,16 @@ function screenCapture() {
     return "Error: Screenshot file was not created. Check screen recording permissions in System Settings → Privacy & Security → Screen Recording.";
   }
 
+  // Resize to max 1280px width so base64 stays small for LLM APIs
+  try {
+    execSync(
+      `sips --resampleWidth 1280 "${screenshotPath}" --out "${screenshotPath}"`,
+      { timeout: 10_000, stdio: "ignore" }
+    );
+  } catch {
+    // Non-critical — send original size if resize fails
+  }
+
   // Get screen info
   let info = {};
   try {

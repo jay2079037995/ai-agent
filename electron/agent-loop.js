@@ -336,7 +336,22 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
       return { output: "[任务已取消]", trace: toolTrace };
     }
     sendProgress(win, agentId, "iteration", { step: i + 1 });
-    const { content, reasoning } = await chatWithProvider(messages, providerConfig);
+
+    let content, reasoning;
+    try {
+      ({ content, reasoning } = await chatWithProvider(messages, providerConfig));
+    } catch (err) {
+      // If messages contain images and the call failed, retry without images
+      // (model may not support vision)
+      const hasImages = messages.some((m) => m.images && m.images.length > 0);
+      if (hasImages) {
+        console.log(`chatWithProvider failed with images, retrying text-only: ${err.message}`);
+        const textOnly = messages.map(({ images, ...rest }) => rest);
+        ({ content, reasoning } = await chatWithProvider(textOnly, providerConfig));
+      } else {
+        throw err;
+      }
+    }
     if (reasoning) {
       sendProgress(win, agentId, "reasoning", { text: reasoning });
     }
@@ -450,8 +465,10 @@ async function agentLoop(userPrompt, sessionHistory, agentConfig, agentId) {
           const ext = path.extname(imgPath).toLowerCase();
           const mediaType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
           userMsg.images.push({ base64, mediaType });
+          const sizeKB = Math.round(data.length / 1024);
+          console.log(`[vision] Attached image: ${imgPath} (${sizeKB} KB, ${mediaType})`);
         } catch (e) {
-          console.log(`screen-control: Failed to read image ${imgPath}: ${e.message}`);
+          console.log(`[vision] Failed to read image ${imgPath}: ${e.message}`);
         }
       }
       if (userMsg.images.length === 0) delete userMsg.images;
