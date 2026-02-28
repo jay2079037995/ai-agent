@@ -46,6 +46,20 @@ function toOpenAIMessages(messages) {
   });
 }
 
+/** MiniMax native format: embed base64 images inline in content string */
+function toMiniMaxMessages(messages) {
+  return messages.map((msg) => {
+    if (!msg.images || msg.images.length === 0) {
+      return { role: msg.role, content: msg.content };
+    }
+    let content = msg.content;
+    for (const img of msg.images) {
+      content += `\n[Image base64:${img.base64}]`;
+    }
+    return { role: msg.role, content };
+  });
+}
+
 /** Ollama format: images as separate base64 array */
 function toOllamaMessages(messages) {
   return messages.map((msg) => {
@@ -60,17 +74,16 @@ function toOllamaMessages(messages) {
   });
 }
 
-// --- MiniMax (Anthropic Messages format) ---
+// --- MiniMax (native API, supports vision via inline base64) ---
 
 async function minimaxChat(messages, { endpoint, apiKey, model }) {
-  const url = endpoint || "https://api.minimaxi.com/anthropic/v1/messages";
-  const prepared = toAnthropicMessages(messages);
+  const url = endpoint || "https://api.minimax.io/v1/chat/completions";
+  const prepared = toMiniMaxMessages(messages);
   const response = await net.fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2024-06-20",
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: model || "MiniMax-M2.5",
@@ -83,8 +96,8 @@ async function minimaxChat(messages, { endpoint, apiKey, model }) {
     throw new Error(`MiniMax error: ${response.status} ${errText}`);
   }
   const data = await response.json();
-  const textBlock = (data.content || []).find((b) => b.type === "text");
-  return { content: textBlock?.text || "", reasoning: null };
+  const msg = data.choices?.[0]?.message || {};
+  return { content: msg.content || "", reasoning: null };
 }
 
 // --- DeepSeek (OpenAI SDK) ---
